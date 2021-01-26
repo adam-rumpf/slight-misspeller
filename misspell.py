@@ -1,13 +1,140 @@
+###
 # Include functions which can act on either words, strings of text, or files.
 # String functions should return strings, while file functions should write files.
 # Also include the ability for this module to accept command line arguments for input/output file names or for a single input string.
 # Include some parameters to adjust the extent of misspelling, and include a few different types of misspelling that can occur, like transposing letters or ADD/DROP/SWAP moves.
 # Possibly include a config file to allow the user to easily adjust parameters. Python includes methods for reading and writing INI files.
 
+###
 # Try to make the resulting words "pronounceable" by applying some phonotactic rules.
 # Words are made up of syllables, and each syllable can be divided into an onset, a nucleus, and a coda.
 # English is a (C)(C)(C)V(C)(C)(C)(C)(C) language, meaning that the onset can contain 0-3 consonant sounds, the nucleus must contain a single vowel sound, and the coda can contain 0-5 consonant sounds.
 # Occasionally English can allow a syllabic consonant as its nucleus, usually L, R, M, or N.
 # There can also be additional phonotactical rules forbidding certain sounds from occurring consecutively. This can be done by making a table of every possible pair of sounds to specify which pairs are or are not allowed (or maybe even a degree of how allowable they are).
 
+###
 # One possible method would be to begin by converting any given word into an estimated pronunciation and syllable grouping, and then work on manipulating the phonetic symbols, and then convert the result back into a plain English spelling.
+
+"""A Python module for slightly misspelling strings and text files.
+
+This module defines a number of functions for converting strings and text
+files into slightly misspelled versions of themselves.
+
+If imported, these functions can be called directly. The following is a
+summary of the available functions:
+    misspell_string(str) -- returns a misspelled version of a given string
+    misspell_file(str[, str]) -- writes a misspelled version of a given input
+        file (or prints to screen if no output is given)
+
+This script can also be called from the command line using the following
+format:
+    $ python misspell.py str [str]
+where the arguments, in order, are:
+    1 -- input file name
+    [2] -- optional output file name (if absent, output is printed to screen;
+        if present, the specified file is written)
+"""
+
+import sys
+
+#=============================================================================
+# Public functions
+#=============================================================================
+
+def misspell_string(s):
+    """misspell_string(str) -> str
+    Returns a misspelled version of a given string.
+    
+    Positional arguments:
+    s (str) -- string to be misspelled
+    
+    Returns:
+    str -- misspelled version of string
+    """
+    
+    pass
+
+#-----------------------------------------------------------------------------
+
+def misspell_file(fin, fout=None):
+    """misspell_file(str[, str]) -> None
+    Writes a misspelled version of a given text file.
+    
+    Attempts to read a text file and misspell each word one-by-one. The result
+    is either written to a separate text file or printed to the screen.
+    
+    Positional arguments:
+    fin (str) -- input file name
+    [fout=None] (str) -- output file name (or None to print to screen)
+    """
+    
+    pass
+
+#=============================================================================
+# Private parameters
+#=============================================================================
+
+###
+# Define any needed tables or rules for breaking syllables.
+
+#=============================================================================
+# Private functions
+#=============================================================================
+
+def _misspell_word(w):
+    """_misspell_word(str) -> str
+    Misspells a single word string.
+    
+    This function is called repeatedly by the main drivers above to misspell
+    each individual word in the master string. The input is assumed here to
+    consist entirely of a string of characters.
+    
+    Positional arguments:
+    w (str) -- single word to be misspelled
+    
+    Returns:
+    str -- misspelled version of word
+    """
+    
+    ###
+    # Steps:
+    # Attempt to acquire capitalization
+    # Attempt to split into syllables by guessing the break points
+    # Convert each syllable individually
+    # Combine syllables
+    # Apply post-processing (like possibly transposing consonants)
+    # Return the result
+    
+    pass
+
+#-----------------------------------------------------------------------------
+
+def _misspell_syllable(s):
+    """_misspell_syllable(str) -> str
+    Misspells a single syllable.
+    
+    The smallest unit of the recursive misspelling scheme. The input is
+    assumed here to consist entirely of a string of characters.
+    
+    Positional arguments:
+    s (str) -- syllable to be misspelled
+    
+    Returns:
+    str -- misspelled syllable
+    """
+    
+    ###
+    # Steps:
+    # Attempt to acquire capitalization
+    # Apply misspelling rules
+    # Return the transformed result
+    
+    pass
+
+#=============================================================================
+# Command line usage
+#=============================================================================
+
+if __name__ == "__main__":
+    #for (i, arg) in enumerate(sys.argv):
+    pass

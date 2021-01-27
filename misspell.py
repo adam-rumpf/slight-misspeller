@@ -3,7 +3,7 @@
 # String functions should return strings, while file functions should write files.
 # Also include the ability for this module to accept command line arguments for input/output file names or for a single input string.
 # Include some parameters to adjust the extent of misspelling, and include a few different types of misspelling that can occur, like transposing letters or ADD/DROP/SWAP moves.
-# Possibly include a config file to allow the user to easily adjust parameters. Python includes methods for reading and writing INI files.
+# Possibly include a config file to allow the user to easily adjust parameters. Python includes methods for reading and writing INI files in the configparser module. While running this script, we should first define default values for all parameters, then check to see whether a local (and compatible) config file exists. If so, we overwrite the default parameter values, and if not, we attempt to write one initialized with the default values. Include the default config file in the repo.
 
 ###
 # Try to make the resulting words "pronounceable" by applying some phonotactic rules.
@@ -14,6 +14,7 @@
 
 ###
 # One possible method would be to begin by converting any given word into an estimated pronunciation and syllable grouping, and then work on manipulating the phonetic symbols, and then convert the result back into a plain English spelling.
+# A simple first approximation of syllable grouping would be to simply break the word into right-grouped (C)V(C) clusters. Specifically, take the first syllable to be everything up to and including the first C cluster which follows the first V cluster, and take every following syllable to be the alternating VC clusters.
 
 """A Python module for slightly misspelling strings and text files.
 
@@ -21,7 +22,7 @@ This module defines a number of functions for converting strings and text
 files into slightly misspelled versions of themselves.
 
 If imported, these functions can be called directly. The following is a
-summary of the available functions:
+summary of the public functions:
     misspell_string(str) -- returns a misspelled version of a given string
     misspell_file(str[, str]) -- writes a misspelled version of a given input
         file (or prints to screen if no output is given)
@@ -35,6 +36,8 @@ where the arguments, in order, are:
         if present, the specified file is written)
 """
 
+import random
+import re
 import sys
 
 #=============================================================================
@@ -52,7 +55,25 @@ def misspell_string(s):
     str -- misspelled version of string
     """
     
-    pass
+    # Validate input
+    if type(s) != str:
+        raise TypeError("input must be a string")
+    
+    # Translate line-by-line and word-by-word
+    out_text = "" # complete output string
+    for line in s.split('\n'):
+        out_line = "" # complete line of output string
+        line_part = re.split(r'(\s+)', line) # word and whitespace clusters
+        for word in line_part:
+            # Include whitespace as-is
+            if word.isspace() == True:
+                out_line += word
+            # Process text
+            else:
+                out_line += _misspell_word(word)
+        out_text += out_line + '\n'
+    
+    return out_text
 
 #-----------------------------------------------------------------------------
 
@@ -68,7 +89,28 @@ def misspell_file(fin, fout=None):
     [fout=None] (str) -- output file name (or None to print to screen)
     """
     
-    pass
+    # Validate inputs
+    if type(fin) != str:
+        raise TypeError("input argument must be a file name string")
+    if type(fout) != str and fout != None:
+        raise TypeError("output argument must be a file name string or None")
+    
+    try:
+        with open(fin, 'r') as f:
+            # If file is found, translate line-by-line
+            out_text = "" # complete output string
+            for line in f:
+                out_text += misspell_string(line)
+    except FileNotFoundError:
+        raise FileNotFoundError("input file " + fin + " not found")
+        return None
+    
+    # Write output string to a file or print to the screen
+    if fout == None:
+        print(out_file)
+    else:
+        with open(fout, 'w') as f:
+            f.write(out_text)
 
 #=============================================================================
 # Private parameters
@@ -76,6 +118,10 @@ def misspell_file(fin, fout=None):
 
 ###
 # Define any needed tables or rules for breaking syllables.
+
+# Define letter types
+vowels = "aeiou"
+consonants = "bcdfghjklmnpqrstvwxyz"
 
 #=============================================================================
 # Private functions
@@ -105,7 +151,8 @@ def _misspell_word(w):
     # Apply post-processing (like possibly transposing consonants)
     # Return the result
     
-    pass
+    ###
+    return w
 
 #-----------------------------------------------------------------------------
 
@@ -129,7 +176,8 @@ def _misspell_syllable(s):
     # Apply misspelling rules
     # Return the transformed result
     
-    pass
+    ###
+    return s
 
 #=============================================================================
 # Command line usage

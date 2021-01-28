@@ -73,7 +73,7 @@ def misspell_string(s):
                 out_line += _misspell_word(word)
         out_text += out_line + '\n'
     
-    return out_text
+    return out_text[:-1]
 
 #-----------------------------------------------------------------------------
 
@@ -107,7 +107,7 @@ def misspell_file(fin, fout=None):
     
     # Write output string to a file or print to the screen
     if fout == None:
-        print(out_file)
+        print(out_text)
     else:
         with open(fout, 'w') as f:
             f.write(out_text)
@@ -120,8 +120,18 @@ def misspell_file(fin, fout=None):
 # Define any needed tables or rules for breaking syllables.
 
 # Define letter types
-vowels = "aeiou"
-consonants = "bcdfghjklmnpqrstvwxyz"
+vowels = tuple("aeiou")
+consonants = tuple("bcdfghjklmnpqrstvwxyz")
+
+# Define letters to automatically treat as being grouped
+groups = ("ch", "gh", "ph", "sh", "th", "ng", "qu")
+
+# Define allowed three-consonant blends
+allow_cblends = ("scr", "spl", "spr", "str")
+
+# Define forbidden letter sequences
+### use for a final pass to delete such pairs
+forbid_pairs = ("aa", "ii", "jj", "kk", "qq", "uu", "vv", "ww", "xx", "yy")
 
 #=============================================================================
 # Private functions

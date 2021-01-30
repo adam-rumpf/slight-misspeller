@@ -24,6 +24,10 @@
 # --init-file, -i (along with an option to select a custom INI file)
 # --text, -t (interpret the first argument as a string to be converted, rather than a file name; in either case, if there's a second argument it's interpreted as the output specifier [file name or blank to print])
 
+###
+# Consider adding an option to misspell words as if typed hastily (giving each letter a chance to be absent, displaced by one space on the keyboard, transposed, or inserted on a glide from one letter to another; punctuation has a chance to be replaced by its non-shifted version). This would be a good preliminary test of all the systems, and would be a fun option to include.
+# "Phonological" misspelling versus "typographical" misspelling.
+
 """A Python module for slightly misspelling strings and text files.
 
 This module defines a number of functions for converting strings and text
@@ -31,21 +35,28 @@ files into slightly misspelled versions of themselves.
 
 If imported, these functions can be called directly. The following is a
 summary of the public functions:
-    misspell_string(str) -- returns a misspelled version of a given string
-    misspell_file(str[, str]) -- writes a misspelled version of a given input
-        file (or prints to screen if no output is given)
+    misspell_string(s[, config]) -- returns a misspelled version of a given
+        string s (optional argument specifies custom settings file)
+    misspell_file(fin[, fout][, config]) -- writes a misspelled version of a
+        given input file (or prints to screen if no output is given; optional
+        argument specifies a custom settings file)
+
+The parameters which control the specifics of the misspelling process are
+defined in a local INI file. If not already present, running any public
+function generates a default file called "settings.ini". This file can be
+manually edited to change the behavior of the algorithm, or it can be used as
+a template for creating different settings profiles. Each public method
+accepts an optional "config" keywoard argument to specify a non-standard
+settings file.
 
 This script can also be called from the command line using the following
 format:
-    $ python misspell.py [-i INIT_FILE] <in> [<out>]
+    $ python misspell.py <in> [<out>]
 where:
-    <in>        name of input text file (or raw string to be converted, if
+    in          name of input text file (or raw string to be converted, if
                 --text flag is set)
-    [<out>]     name of output text file (if left blank, result is printed to
+    <out>       name of output text file (if left blank, result is printed to
                 screen)
-    INIT_FILE   name of custom INI file to define parameters (defaults to
-                "settings.ini", which this program automatically generates if
-                not present)
 
 Command line options include the following:
     -h, --help              display help message and exit
@@ -73,7 +84,11 @@ import re
 # Define any needed tables or rules for breaking syllables.
 
 # Define global constants
-_CONFIG = "settings.ini" # config file with default parameter values
+_CONFIG_DEFAULT = "settings.ini" # config file with default parameter values
+_VERSION="""Slight Misspeller v1.0.0
+         Copyright (c) 2021 Adam Rumpf <adam-rumpf.github.io>
+         Released under MIT license <github.com/adam-rumpf/slight-misspeller>
+         """
 _VOWELS = tuple("aeiou")
 _CONSONANTS = tuple("bcdfghjklmnpqrstvwxyz")
 _GROUPS = ("ch", "gh", "ph", "sh", "th", "ng", "qu") # letters to group
@@ -89,6 +104,9 @@ _FORBID_PAIRS = ("aa", "ii", "jj", "kk", "qq", "uu", "vv", "ww", "xx", "yy")
 ### use for a final pass to prevent certain words from being randomly created
 _FORBID_WORDS = () # words to prevent the program from accidentally creating
 
+# Initialize other global parameters
+_CONFIG = _CONFIG_DEFAULT # currently-loaded config file name
+
 #=============================================================================
 # Argument parser outputs
 #=============================================================================
@@ -100,12 +118,12 @@ _FORBID_WORDS = () # words to prevent the program from accidentally creating
 #=============================================================================
 
 def _misspell_word(w):
-    """_misspell_word(str) -> str
+    """_misspell_word(w) -> str
     Misspells a single word string.
     
-    This function is called repeatedly by the main drivers above to misspell
-    each individual word in the master string. The input is assumed here to
-    consist entirely of a string of characters.
+    This function is called repeatedly by the main driver to misspell each
+    individual word in the master string. The input is assumed here to consist
+    entirely of a string of characters.
     
     Positional arguments:
     w (str) -- single word to be misspelled
@@ -113,6 +131,11 @@ def _misspell_word(w):
     Returns:
     str -- misspelled version of word
     """
+    
+    # Validate input
+    if type(w) != str:
+        raise TypeError("argument must be a string")
+        return None
     
     ###
     # Steps:
@@ -129,7 +152,7 @@ def _misspell_word(w):
 #-----------------------------------------------------------------------------
 
 def _misspell_syllable(s):
-    """_misspell_syllable(str) -> str
+    """_misspell_syllable(s) -> str
     Misspells a single syllable.
     
     The smallest unit of the recursive misspelling scheme. The input is
@@ -142,6 +165,11 @@ def _misspell_syllable(s):
     str -- misspelled syllable
     """
     
+    # Validate input
+    if type(s) != str:
+        raise TypeError("argument must be a string")
+        return None
+    
     ###
     # Steps:
     # Attempt to acquire capitalization
@@ -153,20 +181,28 @@ def _misspell_syllable(s):
 
 #-----------------------------------------------------------------------------
 
-def _read_config(f):
-    """_read_config(str) -> None
+def _read_config(f, silent=False):
+    """_read_config(f[, silent])
     Reads an INI file to set or reset parameters.
     
     Positional arguments:
     f (str) -- config file name
+    
+    Keyword arguments:
+    [silent=False] (bool) -- whether to print progress messages to the screen
     """
     
     # Global parameters to be edited
-    global _FORBID_WORDS
+    global _CONFIG, _FORBID_WORDS
     
     # Validate input
     if type(f) != str:
         raise TypeError("input argument must be a config file name string")
+        return None
+    
+    # Quit if config file has already been read
+    if _CONFIG == f:
+        return None
     
     # Read INI file and set (or reset) parameters
     try:
@@ -179,35 +215,43 @@ def _read_config(f):
             key = "temp"###
             print("Key " + key + " not found in " + f + ".")
             print("Reverting to default parameters.")
-            return _default_config()
+            return _default_config(silent=silent)
     except FileNotFoundError:
         raise FileNotFoundError("config file " + f + " not found")
         return None
 
 #-----------------------------------------------------------------------------
 
-def _default_config():
-    """_default_config() -> None
+def _default_config(silent=False):
+    """_default_config([silent])
     Sets default parameters and writes the default config file.
+    
+    Keyword arguments:
+    [silent=False] (bool) -- whether to print progress messages to the screen
     """
     
     # Global parameters to be edited
-    global _FORBID_WORDS
+    global _CONFIG, _FORBID_WORDS
     
     ### All parameters should be set here, and then the config file should be written based on them
     # If not silent, print a message whenever the file is successfully created, and mention that it can be copied and edited for custom settings.
+    _CONFIG = _CONFIG_DEFAULT
     pass
 
 #=============================================================================
 # Public functions
 #=============================================================================
 
-def misspell_string(s):
-    """misspell_string(str) -> str
+def misspell_string(s, config=_CONFIG_DEFAULT, silent=False):
+    """misspell_string(s[, config][, silent]) -> str
     Returns a misspelled version of a given string.
     
     Positional arguments:
     s (str) -- string to be misspelled
+    
+    Keyword arguments:
+    [config="settings.ini"] (str) -- config file name to control parameters
+    [silent=False] (bool) -- whether to print progress messages to the screen
     
     Returns:
     str -- misspelled version of string
@@ -216,6 +260,13 @@ def misspell_string(s):
     # Validate input
     if type(s) != str:
         raise TypeError("input must be a string")
+        return None
+    if type(config) != str:
+        raise TypeError("config file name must be a string")
+        return None
+    
+    # Set config file (does nothing if no change)
+    _read_config(config, silent=silent)
     
     # Translate line-by-line and word-by-word
     out_text = "" # complete output string
@@ -235,8 +286,8 @@ def misspell_string(s):
 
 #-----------------------------------------------------------------------------
 
-def misspell_file(fin, fout=None):
-    """misspell_file(str[, str]) -> None
+def misspell_file(fin, fout=None, config=_CONFIG_DEFAULT, silent=False):
+    """misspell_file(fin[, fout][, config][, silent])
     Writes a misspelled version of a given text file.
     
     Attempts to read a text file and misspell each word one-by-one. The result
@@ -244,21 +295,35 @@ def misspell_file(fin, fout=None):
     
     Positional arguments:
     fin (str) -- input file name
-    [fout=None] (str) -- output file name (or None to print to screen)
+    
+    Keyword arguments:
+    [fout=False] (str) -- output file name (or None to print to screen)
+    [config="settings.ini"] (str) -- config file name to control parameters
+    [silent=False] (bool) -- whether to print progress messages to the screen
     """
     
     # Validate inputs
     if type(fin) != str:
         raise TypeError("input argument must be a file name string")
+        return None
     if type(fout) != str and fout != None:
         raise TypeError("output argument must be a file name string or None")
+        return None
+    if type(config) != str:
+        raise TypeError("config file name must be a string")
+        return None
     
+    # Set config file (does nothing if no change)
+    _read_config(config)
+    
+    # Translate file line-by-line
     try:
         with open(fin, 'r') as f:
             # If file is found, translate line-by-line
             out_text = "" # complete output string
             for line in f:
-                out_text += misspell_string(line)
+                out_text += misspell_string(line, config=config,
+                                            silent=silent)
     except FileNotFoundError:
         raise FileNotFoundError("input file " + fin + " not found")
         return None

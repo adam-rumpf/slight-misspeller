@@ -1,18 +1,4 @@
 ###
-# Include functions which can act on either words, strings of text, or files.
-# String functions should return strings, while file functions should write files.
-# Also include the ability for this module to accept command line arguments for input/output file names or for a single input string.
-# Include some parameters to adjust the extent of misspelling, and include a few different types of misspelling that can occur, like transposing letters or ADD/DROP/SWAP moves.
-# Possibly include a config file to allow the user to easily adjust parameters. Python includes methods for reading and writing INI files in the configparser module. While running this script, we should first define default values for all parameters, then check to see whether a local (and compatible) config file exists. If so, we overwrite the default parameter values, and if not, we attempt to write one initialized with the default values. Include the default config file in the repo.
-
-###
-# Try to make the resulting words "pronounceable" by applying some phonotactic rules.
-# Words are made up of syllables, and each syllable can be divided into an onset, a nucleus, and a coda.
-# English is a (C)(C)(C)V(C)(C)(C)(C)(C) language, meaning that the onset can contain 0-3 consonant sounds, the nucleus must contain a single vowel sound, and the coda can contain 0-5 consonant sounds.
-# Occasionally English can allow a syllabic consonant as its nucleus, usually L, R, M, or N.
-# There can also be additional phonotactical rules forbidding certain sounds from occurring consecutively. This can be done by making a table of every possible pair of sounds to specify which pairs are or are not allowed (or maybe even a degree of how allowable they are).
-
-###
 # One possible method would be to begin by converting any given word into an estimated pronunciation and syllable grouping, and then work on manipulating the phonetic symbols, and then convert the result back into a plain English spelling.
 # A simple first approximation of syllable grouping would be to simply break the word into right-grouped (C)V(C) clusters. Specifically, take the first syllable to be everything up to and including the first C cluster which follows the first V cluster, and take every following syllable to be the alternating VC clusters.
 
@@ -104,7 +90,14 @@ _FORBID_PAIRS = ("aa", "ii", "jj", "kk", "qq", "uu", "vv", "ww", "xx", "yy")
 
 # Initialize global parameters to be set in config file
 ### use for a final pass to prevent certain words from being randomly created
-_FORBID_WORDS = () # words to prevent the program from accidentally creating
+_BLACKLIST = () # words to prevent the program from accidentally creating
+_DELETE_SPACE = 0.005 # chance to delete any given whitespace character
+_DELETE_CHAR = 0.0075 # chance to delete any given non-whitespace character
+_TYPO_SWAP = 0.0075 # chance to swap consecutive characters
+
+### Other parameters:
+### Typographical: extra adjacent letter, replacement adjacent letter
+### Phonological: onset replacement, nucleus replacement, coda replacement, transpositions
 
 # Initialize other global parameters
 _CONFIG = "settings.ini" # currently-loaded config file name
@@ -146,22 +139,29 @@ def _misspell_word(w, mode=0):
         return None
     
     # Special typographical procedures for whitespace
+    w0 = "" # post-whitespace deletion string
     if w.isspace() == True:
         if mode in {0, 2}:
-            ###
-            pass
-        return w
+            # Chance to randomly delete whitespace characters
+            for c in w:
+                if random.random() < 1.0 - _DELETE_SPACE:
+                    w0 += c
+        return w0
     
     # Apply phonological rules
+    w1 = w # post-phonological misspelling string
     if mode in {0, 1}:
         ###
         pass
     
     # Apply typographical rules
+    w2 = "" # post-typographical misspelling string
     if mode in {0, 2}:
         ###
-        pass
-    
+        # Chance to randomly delete non-whitespace characters
+        for c in w1:
+            if random.random() < 1.0 - _DELETE_CHAR:
+                w2 += c
     
     ###
     # Steps:
@@ -174,7 +174,7 @@ def _misspell_word(w, mode=0):
     # Return the result
     
     ###
-    return w
+    return w2
 
 #-----------------------------------------------------------------------------
 
@@ -272,6 +272,44 @@ def _default_config(silent=False):
     _CONFIG = "settings.ini"
     pass
 
+#-----------------------------------------------------------------------------
+
+def _can_swap(c1, c2):
+    """_can_swap(c1, c2) -> bool
+    Defines whether a given pair of characters can swap.
+    
+    One of the allowed types of typographical error is for two characters to
+    switch position. This is allowed only when they are two letters of the
+    same case, or two numbers, or two punctuation marks.
+    
+    Positional arguments:
+    c1 (str) -- first character
+    c2 (str) -- second character
+    
+    Returns:
+    (bool) -- True if the swap is valid, False otherwise
+    """
+    
+    # Validate input
+    if ((type(c1) != str) or (type(c2) != str) or
+        (len(c1) > 1) or (len(c2) > 1)):
+        raise TypeError("both inputs must be single-character strings")
+        return False
+    
+    # Check for allowed combinations
+    if c1.islower() and c2.islower():
+        return True
+    if c1.isupper() and c2.isupper():
+        return True
+    if c1.isdigit() and c2.isdigit():
+        return True
+    p = "!@#$%^&*()_-+=[]{}\\|;:'\",.<>/?`~"
+    if (c1 in p) and (c2 in p):
+        return True
+    
+    # If all tests failed, the swap is not allowed
+    return False
+    
 #=============================================================================
 # Public functions
 #=============================================================================
@@ -316,15 +354,33 @@ def misspell_string(s, mode=0, config="settings.ini", silent=False):
         for word in line_part:
             # Misspell word
             out_line += _misspell_word(word)
+        # Apply final typographical errors
+        if mode in {0, 2}:
+            # Random character swaps
+            for i in range(len(out_line)-1):
+                # Get two consecutive letters
+                c1, c2 = out_line[i], out_line[i+1]
+                # Skip if characters are not compatible
+                if _can_swap(c1, c2) == False:
+                    continue
+                # Otherwise roll for random swap
+                if random.random() < _TYPO_SWAP:
+                    out_line = (("", out_line[:i])[i > 0] + c2 + c1 +
+                                ("", out_line[i+2:])[i < len(out_line)-1])
+        # Run a final check for blacklisted words
+        for w in _BLACKLIST:
+            ### search out_line for the word; if present, delete one of the final letters from it (starting position offset by word length) and re-scan, moving on only WHILE the word is still present
+            pass
+                    
         out_text += out_line + '\n'
     
     return out_text[:-1]
 
 #-----------------------------------------------------------------------------
 
-def misspell_file(fin, mode=0, fout=None, config="settings.ini",
+def misspell_file(fin, fout=None, mode=0, config="settings.ini",
                   silent=False):
-    """misspell_file(fin[, mode][, fout][, config][, silent])
+    """misspell_file(fin[, fout][, mode][, config][, silent])
     Writes a misspelled version of a given text file.
     
     Attempts to read a text file and misspell each word one-by-one. The result
@@ -334,9 +390,9 @@ def misspell_file(fin, mode=0, fout=None, config="settings.ini",
     fin (str) -- input file name
     
     Keyword arguments:
+    [fout=False] (str) -- output file name (or None to print to screen)
     [mode=0] (int) -- code for misspelling rules to apply (default 0 for all,
         1 for phonological only, 2 for typographical only)
-    [fout=False] (str) -- output file name (or None to print to screen)
     [config="settings.ini"] (str) -- config file name to control parameters
     [silent=False] (bool) -- whether to print progress messages to the screen
     """
@@ -363,9 +419,12 @@ def misspell_file(fin, mode=0, fout=None, config="settings.ini",
     try:
         with open(fin, 'r') as f:
             # If file is found, translate line-by-line
+            if silent == False:
+                print("Converting input file '" + fin + "' ...")
             out_text = "" # complete output string
             for line in f:
-                out_text += misspell_string(line, config=config,
+                # Call string misspeller for each line
+                out_text += misspell_string(line, mode=mode, config=config,
                                             silent=silent)
     except FileNotFoundError:
         raise FileNotFoundError("input file " + fin + " not found")
@@ -373,10 +432,12 @@ def misspell_file(fin, mode=0, fout=None, config="settings.ini",
     
     # Write output string to a file or print to the screen
     if fout == None:
-        print(out_text)
+        print('>'*10 + '\n' + out_text)
     else:
         with open(fout, 'w') as f:
             f.write(out_text)
+            if silent == False:
+                print("Output file '" + fout + "' written.")
 
 #=============================================================================
 # Command line usage
@@ -388,4 +449,5 @@ if __name__ == "__main__":
     # If help or version is requested, just print that and quit
     # If a custom INI file is requested, read that first
     # Finally move on to processing the input string or file
-    pass
+    ###
+    misspell_file("text/cthulhu.txt")

@@ -1,11 +1,3 @@
-###
-# One possible method would be to begin by converting any given word into an estimated pronunciation and syllable grouping, and then work on manipulating the phonetic symbols, and then convert the result back into a plain English spelling.
-# A simple first approximation of syllable grouping would be to simply break the word into right-grouped (C)V(C) clusters. Specifically, take the first syllable to be everything up to and including the first C cluster which follows the first V cluster, and take every following syllable to be the alternating VC clusters.
-
-###
-# Consider adding an option to misspell words as if typed hastily (giving each letter a chance to be absent, displaced by one space on the keyboard, transposed, or inserted on a glide from one letter to another; punctuation has a chance to be replaced by its non-shifted version). This would be a good preliminary test of all the systems, and would be a fun option to include.
-# "Phonological" misspelling versus "typographical" misspelling.
-
 """A Python module for slightly misspelling strings and text files.
 
 This module defines a number of functions for converting strings and text
@@ -49,7 +41,7 @@ Command line options include the following:
     -i, --init-file=STRING  specifies a custom INI file to define parameters
                             (default "settings.ini", which this program
                             automatically generates if not present)
-    -x, --text              interpret first argument as a raw input string
+    -r, --raw               interpret first argument as a raw input string
                             rather than an input file name
     -p, --phono             apply only phonological (sound-based) misspelling
                             rules (mutually exclusive with --typo)
@@ -69,27 +61,24 @@ import re
 # Global parameters
 #=============================================================================
 
-###
-# Define any needed tables or rules for breaking syllables.
-
 # Define global constants
 _VERSION="""Slight Misspeller v1.0.0
          Copyright (c) 2021 Adam Rumpf <adam-rumpf.github.io>
          Released under MIT license <github.com/adam-rumpf/slight-misspeller>
          """
-_VOWELS = tuple("aeiou")
-_CONSONANTS = tuple("bcdfghjklmnpqrstvwxyz")
+_VOWELS = "aeiou"
+_CONSONANTS = "bcdfghjklmnpqrstvwxyz"
 _GROUPS = ("ch", "gh", "ph", "sh", "th", "ng", "qu") # letters to group
 _ALLOW_CBLENDS = ("scr", "spl", "spr", "str") # allowed three-letter consonant
                                               # blends
 ### syllable onset whitelist
 _ALLOW_ONSETS = () # allowed syllable onsets
 ### use for a final pass to delete such pairs
-_FORBID_PAIRS = ("aa", "ii", "jj", "kk", "qq", "uu", "vv", "ww", "xx", "yy")
+_FORBID_PAIRS = ("ii", "jj", "kk", "qq", "vv", "ww", "xx", "yy")
                                           # forbidden consecutive letter pairs
 
-# Initialize global parameters to be set in config file
-### use for a final pass to prevent certain words from being randomly created
+# Initialize global parameters to be defined in the config file
+_CONFIG = "settings.ini" # currently-loaded config file name
 _BLACKLIST = () # words to prevent the program from accidentally creating
 _DELETE_SPACE = 0.005 # chance to delete any given whitespace character
 _DELETE_CHAR = 0.0075 # chance to delete any given non-whitespace character
@@ -98,9 +87,6 @@ _TYPO_SWAP = 0.0075 # chance to swap consecutive characters
 ### Other parameters:
 ### Typographical: extra adjacent letter, replacement adjacent letter
 ### Phonological: onset replacement, nucleus replacement, coda replacement, transpositions
-
-# Initialize other global parameters
-_CONFIG = "settings.ini" # currently-loaded config file name
 
 #=============================================================================
 # Argument parser outputs
@@ -151,7 +137,12 @@ def _misspell_word(w, mode=0):
     # Apply phonological rules
     w1 = w # post-phonological misspelling string
     if mode in {0, 1}:
+        # Split string into consonant/vowel/punctuation clusters
+        s = [x for x in re.split("(["+_VOWELS+"]+)|(["+_CONSONANTS+"]+)",
+             w1, flags=re.IGNORECASE) if x]
+        
         ###
+        print(s)
         pass
     
     # Apply typographical rules
@@ -173,7 +164,6 @@ def _misspell_word(w, mode=0):
     # Apply typographical misspelling rules
     # Return the result
     
-    ###
     return w2
 
 #-----------------------------------------------------------------------------
@@ -224,7 +214,7 @@ def _read_config(f, silent=False):
     """
     
     # Global parameters to be edited
-    global _CONFIG, _FORBID_WORDS
+    global _CONFIG, _BLACKLIST, _DELETE_SPACE, _DELETE_CHAR, _TYPO_SWAP
     
     # Validate input
     if type(f) != str:
@@ -265,7 +255,7 @@ def _default_config(silent=False):
     """
     
     # Global parameters to be edited
-    global _CONFIG, _FORBID_WORDS
+    global _CONFIG, _BLACKLIST, _DELETE_SPACE, _DELETE_CHAR, _TYPO_SWAP
     
     ### All parameters should be set here, and then the config file should be written based on them
     # If not silent, print a message whenever the file is successfully created, and mention that it can be copied and edited for custom settings.
@@ -450,4 +440,5 @@ if __name__ == "__main__":
     # If a custom INI file is requested, read that first
     # Finally move on to processing the input string or file
     ###
-    misspell_file("text/cthulhu.txt")
+    ###misspell_file("text/cthulhu.txt")
+    misspell_string("This... is an example, see?", mode=1)

@@ -54,6 +54,7 @@ Command line options include the following:
 
 import argparse
 import configparser
+import math
 import random
 import re
 
@@ -62,20 +63,16 @@ import re
 #=============================================================================
 
 # Define global constants
-_VERSION="""Slight Misspeller v1.0.0
+_VERSION="""Slight Misspeller v0.1.0-beta
          Copyright (c) 2021 Adam Rumpf <adam-rumpf.github.io>
          Released under MIT license <github.com/adam-rumpf/slight-misspeller>
          """
 _VOWELS = "aeiou"
 _CONSONANTS = "bcdfghjklmnpqrstvwxyz"
-_GROUPS = ("ch", "gh", "ph", "sh", "th", "ng", "qu") # letters to group
-_ALLOW_CBLENDS = ("scr", "spl", "spr", "str") # allowed three-letter consonant
-                                              # blends
-### syllable onset whitelist
-_ALLOW_ONSETS = () # allowed syllable onsets
-### use for a final pass to delete such pairs
-_FORBID_PAIRS = ("ii", "jj", "kk", "qq", "vv", "ww", "xx", "yy")
-                                          # forbidden consecutive letter pairs
+_KEYBOARD = ["1234567890", "qwertyuiop", "asdfghjkl;", "zxcvbnm,./",
+             "!@#$%^&*()", "QWERTYUIOP", "ASDFGHJKL:", "ZXCVBNM<>?"]
+_COS45 = math.sqrt(2)/2
+### Also include any sets needed to define phonological misspelling rules.
 
 # Initialize global parameters to be defined in the config file
 _CONFIG = "settings.ini" # currently-loaded config file name
@@ -83,16 +80,13 @@ _BLACKLIST = () # words to prevent the program from accidentally creating
 _DELETE_SPACE = 0.005 # chance to delete any given whitespace character
 _DELETE_CHAR = 0.0075 # chance to delete any given non-whitespace character
 _TYPO_SWAP = 0.0075 # chance to swap consecutive characters
+_TYPO_EXTRA = 0.0015 # chance to insert a letter from an adjacent key
+_TYPO_REPLACE = 0.0025 # chance to mistype a letter as an adjacent key
 
 ### Other parameters:
 ### Typographical: extra adjacent letter, replacement adjacent letter
-### Phonological: onset replacement, nucleus replacement, coda replacement, transpositions
-
-#=============================================================================
-# Argument parser outputs
-#=============================================================================
-
-### output functions for help and version
+### Phonological: onset replacement, nucleus replacement, coda replacement,
+### transpositions
 
 #=============================================================================
 # Private functions
@@ -141,9 +135,7 @@ def _misspell_word(w, mode=0):
         s = [x for x in re.split("(["+_VOWELS+"]+)|(["+_CONSONANTS+"]+)",
              w1, flags=re.IGNORECASE) if x]
         
-        ###
-        print(s)
-        pass
+        ### Apply phonological misspelling to each cluster.
     
     # Apply typographical rules
     w2 = "" # post-typographical misspelling string
@@ -198,8 +190,8 @@ def _misspell_syllable(s):
 
 #-----------------------------------------------------------------------------
 
-def _read_config(f, silent=False):
-    """_read_config(f[, silent])
+def _read_config(fin, silent=False):
+    """_read_config(fin[, silent])
     Reads an INI file to set or reset parameters.
     
     Reading a config file updates a variety of internal parameters, which
@@ -207,7 +199,7 @@ def _read_config(f, silent=False):
     most recent config file a second time has no effect.
     
     Positional arguments:
-    f (str) -- config file name
+    fin (str) -- config file name
     
     Keyword arguments:
     [silent=False] (bool) -- whether to print progress messages to the screen
@@ -217,17 +209,17 @@ def _read_config(f, silent=False):
     global _CONFIG, _BLACKLIST, _DELETE_SPACE, _DELETE_CHAR, _TYPO_SWAP
     
     # Validate input
-    if type(f) != str:
+    if type(fin) != str:
         raise TypeError("input argument must be a config file name string")
         return None
     
     # Quit if config file has already been read
-    if _CONFIG == f:
+    if _CONFIG == fin:
         return None
     
     # Read INI file and set (or reset) parameters
     if silent == False:
-        print("Reading config file '" + f + "'.")
+        print("Reading config file '" + fin + "'.")
     try:
         try:
             ### read fields one-by-one
@@ -237,11 +229,11 @@ def _read_config(f, silent=False):
             ### print a message which specifies the key that does not exist
             key = "temp"###
             if silent == False:
-                print("Key " + key + " not found in '" + f + "'.")
+                print("Key " + key + " not found in '" + fin + "'.")
                 print("Reverting to default parameters.")
             return _default_config(silent=silent)
     except FileNotFoundError:
-        raise FileNotFoundError("config file " + f + " not found")
+        raise FileNotFoundError("config file " + fin + " not found")
         return None
 
 #-----------------------------------------------------------------------------
@@ -299,7 +291,114 @@ def _can_swap(c1, c2):
     
     # If all tests failed, the swap is not allowed
     return False
-    
+
+#-----------------------------------------------------------------------------
+
+def _mistype_key(c):
+    """_mistype_key(c) -> str
+    Finds a key near the specified key.
+
+    Given a keyboard character, this function returns the character of an
+    adjacent key. Rectilinear moves are all equally likely, and diagonal moves
+    are equally likely but with a diminished weight of sqrt(2)/2 ~= 0.707.
+
+    Positional arguments:
+    c (str) -- keyboard character to replace
+
+    Returns:
+    (str) -- single character to replace the given character
+    """
+
+    # Validate input
+    if (type(c) != str) or (len(c) != 1):
+        raise TypeError("input key must be a single-character string")
+        return None
+
+    # Find the keyboard list to which the character belongs
+    row = 0 # row index (0-3 for lowercase row, 4-7 for uppercase row)
+    while (row <= 7) and (c not in _KEYBOARD[row]):
+        row += 1
+
+    # If all rows passed without a match, change nothing
+    if row > 7:
+        return c
+
+    # Determine whether the key is on a boundary
+    col = _KEYBOARD[row].find(c) # column index
+    lb = False # left boundary
+    if col == 0:
+        lb = True
+    rb = False # right boundary
+    if col >= len(_KEYBOARD[row]) - 1:
+        rb = True
+    tb = False # top boundary
+    if row % 4 == 0:
+        tb = True
+    bb = False # bottom boundary
+    if row % 4 == 3:
+        bb = True
+
+    # Build a weighted list of adjacent keys
+    choices = {} # dictionary of weighted choices
+    if not lb:
+        choices[_KEYBOARD[row][col-1]] = 1
+        if not tb:
+            choices[_KEYBOARD[row-1][col-1]] = _COS45
+        if not bb:
+            choices[_KEYBOARD[row+1][col-1]] = _COS45
+        
+    if not rb:
+        choices[_KEYBOARD[row][col+1]] = 1
+        if not tb:
+            choices[_KEYBOARD[row-1][col+1]] = _COS45
+        if not bb:
+            choices[_KEYBOARD[row+1][col+1]] = _COS45
+    if not tb:
+        choices[_KEYBOARD[row-1][col]] = 1
+    if not bb:
+        choices[_KEYBOARD[row+1][col]] = 1
+
+    # Randomly select an adjacent key
+    return _dictionary_sample(choices)
+
+#-----------------------------------------------------------------------------
+
+def _dictionary_sample(dic):
+    """_dictionary_sample(dic) -> key
+    Returns a weighted random sample key from a dictionary.
+
+    The dictionary is assumed to consist of key/weight pairs.
+
+    Positional arguments:
+    dic (dict) -- dictionary of key/weight pairs (weights given as floats)
+
+    Returns:
+    (key) -- random key from dictionary
+    """
+
+    # Validate input
+    if type(dic) != dict:
+        raise TypeError("sample object must be a key/weight dictionary")
+        return None
+
+    # Find total weight
+    total = 0.0
+    for key in dic:
+        total += dic[key]
+
+    # Select a random weight
+    rand = total*random.random()
+
+    # Iterate through dictionary until passing this weight
+    total = 0.0
+    for key in dic:
+        total += dic[key]
+        if total >= rand:
+            return key
+
+    # Final stop for safety
+    return list(dic)[0]
+   
 #=============================================================================
 # Public functions
 #=============================================================================
@@ -441,4 +540,3 @@ if __name__ == "__main__":
     # Finally move on to processing the input string or file
     ###
     ###misspell_file("text/cthulhu.txt")
-    misspell_string("This... is an example, see?", mode=1)

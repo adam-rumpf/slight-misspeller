@@ -63,10 +63,17 @@ import re
 #=============================================================================
 
 # Define global constants
-_VERSION="""Slight Misspeller v0.1.0-beta
-         Copyright (c) 2021 Adam Rumpf <adam-rumpf.github.io>
-         Released under MIT license <github.com/adam-rumpf/slight-misspeller>
-         """
+_VERSION = """Slight Misspeller v0.1.0-beta
+Copyright (c) 2021 Adam Rumpf <adam-rumpf.github.io>
+Released under MIT license <github.com/adam-rumpf/slight-misspeller>
+"""
+_CONFIG_COMMENTS = """; Slight Misspeller v0.1.0-beta
+; Copyright (c) 2021 Adam Rumpf <adam-rumpf.github.io>
+; Released under MIT license <github.com/adam-rumpf/slight-misspeller>
+;
+; The fields below can be manually edited to change the behavior of the
+; misspelling algorithms in misspell.py.
+""" ### Add a guide to what each field and option does (also in README)
 _VOWELS = "aeiou"
 _CONSONANTS = "bcdfghjklmnpqrstvwxyz"
 _KEYBOARD = ["1234567890", "qwertyuiop", "asdfghjkl;", "zxcvbnm,./",
@@ -76,11 +83,11 @@ _COS45 = math.sqrt(2)/2
 
 # Initialize global parameters to be defined in the config file
 _CONFIG = "settings.ini" # currently-loaded config file name
-_BLACKLIST = () # words to prevent the program from accidentally creating
-_DELETE_SPACE = 0.005 # chance to delete any given whitespace character
-_DELETE_CHAR = 0.0075 # chance to delete any given non-whitespace character
+_BLACKLIST = ("Professor",) # words to prevent the program from accidentally creating
+_TYPO_DELETE_SPACE = 0.005 # chance to delete any whitespace character
 _TYPO_SWAP = 0.0075 # chance to swap consecutive characters
-_TYPO_EXTRA = 0.0015 # chance to insert a letter from an adjacent key
+_TYPO_DELETE_CHAR = 0.0075 # chance to delete any non-whitespace character
+_TYPO_EXTRA = 0.001 # chance to insert a letter from an adjacent key
 _TYPO_REPLACE = 0.0025 # chance to mistype a letter as an adjacent key
 
 ### Other parameters:
@@ -124,13 +131,14 @@ def _misspell_word(w, mode=0):
         if mode in {0, 2}:
             # Chance to randomly delete whitespace characters
             for c in w:
-                if random.random() < 1.0 - _DELETE_SPACE:
+                if random.random() < 1.0 - _TYPO_DELETE_SPACE:
                     w0 += c
         return w0
     
     # Apply phonological rules
     w1 = w # post-phonological misspelling string
     if mode in {0, 1}:
+        
         # Split string into consonant/vowel/punctuation clusters
         s = [x for x in re.split("(["+_VOWELS+"]+)|(["+_CONSONANTS+"]+)",
              w1, flags=re.IGNORECASE) if x]
@@ -140,21 +148,26 @@ def _misspell_word(w, mode=0):
     # Apply typographical rules
     w2 = "" # post-typographical misspelling string
     if mode in {0, 2}:
-        ###
-        # Chance to randomly delete non-whitespace characters
+        
+        # Chance to randomly delete, insert, or mistype a character
         for c in w1:
-            if random.random() < 1.0 - _DELETE_CHAR:
+            # Select a random type of mistake (or none)
+            rand = random.random()
+            if rand < _TYPO_DELETE_CHAR:
+                # Delete character (omit from output string)
+                continue
+            elif rand < _TYPO_DELETE_CHAR + _TYPO_EXTRA:
+                # Insert an extra character (randomly select left or right)
+                if random.random() < 0.5:
+                    w2 += _mistype_key(c) + c
+                else:
+                    w2 += c + _mistype_key(c)
+            elif rand < _TYPO_DELETE_CHAR + _TYPO_EXTRA + _TYPO_REPLACE:
+                # Replace character
+                w2 += _mistype_key(c)
+            else:
+                # If no error, include unedited character
                 w2 += c
-    
-    ###
-    # Steps:
-    # Attempt to acquire capitalization
-    # Attempt to split into syllables by guessing the break points
-    # Convert each syllable individually
-    # Combine syllables
-    # Apply post-processing (like possibly transposing consonants)
-    # Apply typographical misspelling rules
-    # Return the result
     
     return w2
 
@@ -206,7 +219,8 @@ def _read_config(fin, silent=False):
     """
     
     # Global parameters to be edited
-    global _CONFIG, _BLACKLIST, _DELETE_SPACE, _DELETE_CHAR, _TYPO_SWAP
+    global _CONFIG, _BLACKLIST, _TYPO_DELETE_SPACE, _TYPO_DELETE_CHAR
+    global _TYPO_SWAP, _TYPO_EXTRA, _TYPO_REPLACE
     
     # Validate input
     if type(fin) != str:
@@ -224,6 +238,8 @@ def _read_config(fin, silent=False):
         try:
             ### read fields one-by-one
             ### include input validation for each individual field
+            ###
+            ### _DELETE_CHAR, _TYPO_EXTRA, and _TYPO_REPLACE should sum to <=1
             pass
         except KeyError:
             ### print a message which specifies the key that does not exist
@@ -247,7 +263,8 @@ def _default_config(silent=False):
     """
     
     # Global parameters to be edited
-    global _CONFIG, _BLACKLIST, _DELETE_SPACE, _DELETE_CHAR, _TYPO_SWAP
+    global _CONFIG, _BLACKLIST, _TYPO_DELETE_SPACE, _TYPO_DELETE_CHAR
+    global _TYPO_SWAP, _TYPO_EXTRA, _TYPO_REPLACE
     
     ### All parameters should be set here, and then the config file should be written based on them
     # If not silent, print a message whenever the file is successfully created, and mention that it can be copied and edited for custom settings.
@@ -458,8 +475,11 @@ def misspell_string(s, mode=0, config="settings.ini", silent=False):
                                 ("", out_line[i+2:])[i < len(out_line)-1])
         # Run a final check for blacklisted words
         for w in _BLACKLIST:
-            ### search out_line for the word; if present, delete one of the final letters from it (starting position offset by word length) and re-scan, moving on only WHILE the word is still present
-            pass
+            # Attempt to find the blacklisted word
+            while out_text.lower().find(w.lower()) >= 0:
+                # If present, delete its last character
+                pos = out_text.lower().find(w.lower()) + len(w) - 1
+                out_text = out_text[:pos] + out_text[pos+1:]
                     
         out_text += out_line + '\n'
     
@@ -521,7 +541,7 @@ def misspell_file(fin, fout=None, mode=0, config="settings.ini",
     
     # Write output string to a file or print to the screen
     if fout == None:
-        print('>'*10 + '\n' + out_text)
+        print('\n' + '>'*10 + '\n' + out_text)
     else:
         with open(fout, 'w') as f:
             f.write(out_text)
@@ -538,5 +558,10 @@ if __name__ == "__main__":
     # If help or version is requested, just print that and quit
     # If a custom INI file is requested, read that first
     # Finally move on to processing the input string or file
+    # If given a string we need to manually run misspell_string() and print
+    # the result here.
     ###
-    ###misspell_file("text/cthulhu.txt")
+    ###misspell_file("text/cthulhu.txt", mode=2)
+    for i in range(20):
+        print(misspell_string("My knowledge of the thing began in the winter.",
+                        mode=2))

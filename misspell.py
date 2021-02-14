@@ -36,7 +36,6 @@ where:
 
 Command line options include the following:
     -h, --help              display usage guide and exit
-    -u, --usage             equivalent to --help
     -v, --version           display version info and exit
     -i, --init-file=STRING  specifies a custom INI file to define parameters
                             (default "settings.ini", which this program
@@ -62,18 +61,43 @@ import re
 # Global parameters
 #=============================================================================
 
-# Define global constants
+# Define docstrings
 _VERSION = """Slight Misspeller v0.1.0-beta
 Copyright (c) 2021 Adam Rumpf <adam-rumpf.github.io>
 Released under MIT license <github.com/adam-rumpf/slight-misspeller>
 """
-_CONFIG_COMMENTS = """; Slight Misspeller v0.1.0-beta
-; Copyright (c) 2021 Adam Rumpf <adam-rumpf.github.io>
-; Released under MIT license <github.com/adam-rumpf/slight-misspeller>
-;
+_CONFIG_COMMENTS = """; 
 ; The fields below can be manually edited to change the behavior of the
-; misspelling algorithms in misspell.py.
-""" ### Add a guide to what each field and option does (also in README)
+; misspelling algorithms in 'misspell.py'.
+;
+; [typographical]
+;
+; Defines parameters for typographical misspelling (conducted after all
+; phonological misspelling). All fields specify probabilities between 0.0 and
+; 1.0 for each event occurring for any given character.
+;
+; Events delete_char, insert, and replace are mutually exclusive, and the sum
+; of their probabilities must not exceed 1.0.
+;
+; delete_space -- chance to delete any given whitespace character
+; delete_char -- chance to delete any given non-whitespace character; mutually
+;     exclusive with insert and replace
+; swap -- chance to swap any pair of adjacent characters during a final pass
+; insert -- chance to insert an additional character before or after any given
+;     non-whitespace character (both equally likely); additional character
+;     chosen as a keyboard key adjacent to the current character; mutually
+;     exclusive with delete_char and replace
+; replace -- chance to replace any given non-whitespace character with one next
+;     to it on the keyboard; mutually exclusive with delete_char and insert
+;
+; [blacklist]
+;
+; Case-insensitive list of blacklisted words, each on a separate line.
+; Blacklisted words are removed from the final output file after all
+; misspelling procedures have completed.
+"""
+
+# Define global constants
 _VOWELS = "aeiou"
 _CONSONANTS = "bcdfghjklmnpqrstvwxyz"
 _KEYBOARD = ["1234567890", "qwertyuiop", "asdfghjkl;", "zxcvbnm,./",
@@ -81,14 +105,23 @@ _KEYBOARD = ["1234567890", "qwertyuiop", "asdfghjkl;", "zxcvbnm,./",
 _COS45 = math.sqrt(2)/2
 ### Also include any sets needed to define phonological misspelling rules.
 
-# Initialize global parameters to be defined in the config file
-_CONFIG = "settings.ini" # currently-loaded config file name
-_BLACKLIST = ("Professor",) # words to prevent the program from accidentally creating
-_TYPO_DELETE_SPACE = 0.005 # chance to delete any whitespace character
-_TYPO_SWAP = 0.0075 # chance to swap consecutive characters
-_TYPO_DELETE_CHAR = 0.0075 # chance to delete any non-whitespace character
-_TYPO_EXTRA = 0.001 # chance to insert a letter from an adjacent key
-_TYPO_REPLACE = 0.0025 # chance to mistype a letter as an adjacent key
+# Define default global parameters
+_DEF_CONFIG = "settings.ini" # currently-loaded config file name
+_DEF_BLACKLIST = () # words to prevent the program from accidentally creating
+_DEF_TYPO_DELETE_SPACE = 0.005 # chance to delete any whitespace character
+_DEF_TYPO_SWAP = 0.0075 # chance to swap consecutive characters
+_DEF_TYPO_DELETE_CHAR = 0.0075 # chance to delete any non-whitespace character
+_DEF_TYPO_INSERT = 0.001 # chance to insert a letter from an adjacent key
+_DEF_TYPO_REPLACE = 0.0025 # chance to mistype a letter as an adjacent key
+
+# Set global parameters to default values
+_CONFIG = _DEF_CONFIG
+_BLACKLIST = _DEF_BLACKLIST
+_TYPO_DELETE_SPACE = _DEF_TYPO_DELETE_SPACE
+_TYPO_SWAP = _DEF_TYPO_SWAP
+_TYPO_DELETE_CHAR = _DEF_TYPO_DELETE_CHAR
+_TYPO_INSERT = _DEF_TYPO_INSERT
+_TYPO_REPLACE = _DEF_TYPO_REPLACE
 
 ### Other parameters:
 ### Typographical: extra adjacent letter, replacement adjacent letter
@@ -156,13 +189,13 @@ def _misspell_word(w, mode=0):
             if rand < _TYPO_DELETE_CHAR:
                 # Delete character (omit from output string)
                 continue
-            elif rand < _TYPO_DELETE_CHAR + _TYPO_EXTRA:
+            elif rand < _TYPO_DELETE_CHAR + _TYPO_INSERT:
                 # Insert an extra character (randomly select left or right)
                 if random.random() < 0.5:
                     w2 += _mistype_key(c) + c
                 else:
                     w2 += c + _mistype_key(c)
-            elif rand < _TYPO_DELETE_CHAR + _TYPO_EXTRA + _TYPO_REPLACE:
+            elif rand < _TYPO_DELETE_CHAR + _TYPO_INSERT + _TYPO_REPLACE:
                 # Replace character
                 w2 += _mistype_key(c)
             else:
@@ -220,7 +253,7 @@ def _read_config(fin, silent=False):
     
     # Global parameters to be edited
     global _CONFIG, _BLACKLIST, _TYPO_DELETE_SPACE, _TYPO_DELETE_CHAR
-    global _TYPO_SWAP, _TYPO_EXTRA, _TYPO_REPLACE
+    global _TYPO_SWAP, _TYPO_INSERT, _TYPO_REPLACE
     
     # Validate input
     if type(fin) != str:
@@ -239,7 +272,7 @@ def _read_config(fin, silent=False):
             ### read fields one-by-one
             ### include input validation for each individual field
             ###
-            ### _DELETE_CHAR, _TYPO_EXTRA, and _TYPO_REPLACE should sum to <=1
+            ### _DELETE_CHAR, _TYPO_INSERT, and _TYPO_REPLACE should sum to <=1
             pass
         except KeyError:
             ### print a message which specifies the key that does not exist
@@ -254,22 +287,78 @@ def _read_config(fin, silent=False):
 
 #-----------------------------------------------------------------------------
 
-def _default_config(silent=False):
+def _default_config(silent=False, comments=True):
     """_default_config([silent])
     Sets default parameters and writes the default config file.
     
     Keyword arguments:
     [silent=False] (bool) -- whether to print progress messages to the screen
+    [comments=True] (bool) -- whether to include comments in the config file
     """
     
     # Global parameters to be edited
     global _CONFIG, _BLACKLIST, _TYPO_DELETE_SPACE, _TYPO_DELETE_CHAR
-    global _TYPO_SWAP, _TYPO_EXTRA, _TYPO_REPLACE
-    
-    ### All parameters should be set here, and then the config file should be written based on them
-    # If not silent, print a message whenever the file is successfully created, and mention that it can be copied and edited for custom settings.
-    _CONFIG = "settings.ini"
-    pass
+    global _TYPO_SWAP, _TYPO_INSERT, _TYPO_REPLACE
+
+    if silent == False:
+        print("Resetting config file to default 'settings.ini' ...")
+
+    # Reset all global parameters to their default values
+    _CONFIG = _DEF_CONFIG
+    _BLACKLIST = _DEF_BLACKLIST
+    _TYPO_DELETE_SPACE = _DEF_TYPO_DELETE_SPACE
+    _TYPO_SWAP = _DEF_TYPO_SWAP
+    _TYPO_DELETE_CHAR = _DEF_TYPO_DELETE_CHAR
+    _TYPO_INSERT = _DEF_TYPO_INSERT
+    _TYPO_REPLACE = _DEF_TYPO_REPLACE
+
+    # Initialize config parser
+    config = configparser.ConfigParser(allow_no_value=True)
+
+    # Load typographical parameters
+    dic = {}
+    dic["delete_space"] = _TYPO_DELETE_SPACE
+    dic["delete_char"] = _TYPO_DELETE_CHAR
+    dic["swap"] = _TYPO_SWAP
+    dic["insert"] = _TYPO_INSERT
+    dic["replace"] = _TYPO_REPLACE
+    config["typographical"] = dic
+    del dic
+
+    ###
+    # Load phonological parameters
+
+    # Load blacklist
+    dic = {}
+    for w in _BLACKLIST:
+        dic[w] = None
+    config["blacklist"] = dic
+    del dic
+
+    # Write config file
+    with open(_CONFIG, 'w') as f:
+        config.write(f)
+
+    # Write comment lines to beginning of file
+    if comments == True:
+        text = "" # all text in config file
+
+        # Get config contents
+        with open(_CONFIG, 'r') as f:
+            text = f.read()
+
+        # Write version info into comments
+        version = ""
+        for line in _VERSION.split("\n")[:-1]:
+            version += "; " + line + "\n"
+
+        # Write version, comments, and config text to config file
+        text = version + _CONFIG_COMMENTS + "\n" + text
+        with open(_CONFIG, 'w') as f:
+            f.write(text)
+
+    if silent == False:
+        print("Config file successfully reset!")
 
 #-----------------------------------------------------------------------------
 
@@ -562,6 +651,4 @@ if __name__ == "__main__":
     # the result here.
     ###
     ###misspell_file("text/cthulhu.txt", mode=2)
-    for i in range(20):
-        print(misspell_string("My knowledge of the thing began in the winter.",
-                        mode=2))
+    _default_config()

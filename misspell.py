@@ -96,7 +96,7 @@ _CONFIG_COMMENTS = """;
 ; [blacklist]
 ;
 ; Case-insensitive list of blacklisted words, each on a separate line.
-; Blacklisted words are removed from the final output file after all
+; Blacklisted words are removed from the final output string after all
 ; misspelling procedures have completed.
 """
 
@@ -150,7 +150,7 @@ def _misspell_word(w, mode=0):
         1 for phonological only, 2 for typographical only)
     
     Returns:
-    str -- misspelled version of word
+    (str) -- misspelled version of word
     """
     
     # Validate input
@@ -178,6 +178,32 @@ def _misspell_word(w, mode=0):
              w1, flags=re.IGNORECASE) if x]
         
         ### Apply phonological misspelling to each cluster.
+        ### Do not edit punctuation clusters.
+        ### Treat each vowel cluster as a nucleus.
+        ### Treat each consonant cluster as a coda, unless the word begins
+        ### with one, in which case treat that first consonant cluster as an
+        ### onset.
+        ### Take note of whether any letters in the cluster are capitalized.
+        ### If none, capitalize nothing, if all, capitalize all, and if
+        ### the first is capital, capitalize only the first. If anything else,
+        ### maintain the capitalization of any replaced symbols, and randomize
+        ### inserted symbols.
+        ###
+        ### Once the clusters have been parsed, randomly perform different
+        ### types of transformation. Any given letter should have a chance to
+        ### be either deleted, have a new valid character inserted next to it,
+        ### or replaced with a different valid character, all subject to
+        ### passing rules defined by whitelisted and blacklisted letter
+        ### combinations. Finally we consider transposing syllable blocks.
+        ### If the current letter is chosen for transformation, check its
+        ### neighbors to see if it's part of a defined letter cluster ("th",
+        ### "ch", "sh", "qu", etc.) and with some probability choose to alter
+        ### the entire cluster as if it were a single character (this is
+        ### more complicated for "qu" since that's one consonant and one
+        ### vowel).
+        ###
+        ### If the attempted transformation fails, try again up to a small
+        ### threshold.
     
     # Apply typographical rules
     w2 = "" # post-typographical misspelling string
@@ -218,7 +244,7 @@ def _misspell_syllable(s):
     s (str) -- syllable to be misspelled
     
     Returns:
-    str -- misspelled syllable
+    (str) -- misspelled syllable
     """
     
     # Validate input
@@ -592,7 +618,7 @@ def misspell_string(s, mode=0, config=_DEF_CONFIG, silent=False):
     [silent=False] (bool) -- whether to print progress messages to the screen
     
     Returns:
-    str -- misspelled version of string
+    (str) -- misspelled version of string
     """
     
     # Validate input
@@ -725,15 +751,15 @@ if __name__ == "__main__" and len(sys.argv) > 1:
     parser.add_argument("-i", "--init-file", default=_DEF_CONFIG,
                         help="misspeller parameter config file", dest="config")
     parser.add_argument("-s", "--string", action="store_true",
-                        help=("interpret 'instring' as a raw string rather " +
-                              "than a file path"))
+                        help=("interpret 'instring' as a string to be " +
+                              "misspelled rather than a file path"))
+    parser.add_argument("-q", "--quiet", action="store_true", dest="silent",
+                        help="silence progress messages")
     group.add_argument("-p", "--phono", action="store_true",
                        help="apply only phonological misspelling rules")
     group.add_argument("-t", "--typo", action="store_true",
                        help="apply only typographical misspelling rules")
-    parser.add_argument("-q", "--quiet", action="store_true", dest="silent",
-                        help="silence progress messages")
-
+    
     # Parse command line arguments
     args = parser.parse_args()
 

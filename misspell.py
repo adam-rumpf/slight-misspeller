@@ -24,31 +24,6 @@ manually edited to change the behavior of the algorithm, or it can be used as
 a template for creating different settings profiles. Each public method
 accepts an optional "config" keywoard argument to specify a non-standard
 settings file.
-
-This script can also be called from the command line using the following
-(Linux) format:
-    $ python misspell.py <in> [<out>]
-where:
-    <in>        name of input text file (or raw string to be converted, if
-                --text flag is set)
-    <out>       name of output text file (if left blank, result is printed to
-                screen)
-
-Command line options include the following:
-    -h, --help              display usage guide and exit
-    -v, --version           display version info and exit
-    -i, --init-file=STRING  specifies a custom INI file to define parameters
-                            (default "settings.ini", which this program
-                            automatically generates if not present)
-    -r, --raw               interpret first argument as a raw input string
-                            rather than an input file name
-    -p, --phono             apply only phonological (sound-based) misspelling
-                            rules (mutually exclusive with --typo)
-    -t, --typo              apply only typographical (letter-based)
-                            misspelling rules (mutually exclusive with
-                            --phono)
-    -s, --silent            suppresses progress messages
-    -q, --quiet             equivalent to --silent
 """
 
 import argparse
@@ -129,7 +104,7 @@ _TYPO_REPLACE = _DEF_TYPO_REPLACE
 ### transpositions
 
 #=============================================================================
-# Private functions
+# Misspelling algorithms
 #=============================================================================
 
 def _misspell_word(w, mode=0):
@@ -156,7 +131,6 @@ def _misspell_word(w, mode=0):
         mode = 0
     if type(w) != str:
         raise TypeError("argument must be a string")
-        return None
     
     # Special typographical procedures for whitespace
     w0 = "" # post-whitespace deletion string
@@ -223,7 +197,6 @@ def _misspell_syllable(s):
     # Validate input
     if type(s) != str:
         raise TypeError("argument must be a string")
-        return None
     
     ###
     # Steps:
@@ -235,6 +208,112 @@ def _misspell_syllable(s):
     return s
 
 #-----------------------------------------------------------------------------
+
+def _can_swap(c1, c2):
+    """_can_swap(c1, c2) -> bool
+    Defines whether a given pair of characters can swap.
+    
+    One of the allowed types of typographical error is for two characters to
+    switch position. This is allowed only when they are two letters of the
+    same case, or two numbers, or two punctuation marks.
+    
+    Positional arguments:
+    c1 (str) -- first character
+    c2 (str) -- second character
+    
+    Returns:
+    (bool) -- True if the swap is valid, False otherwise
+    """
+    
+    # Validate input
+    if ((type(c1) != str) or (type(c2) != str) or
+        (len(c1) > 1) or (len(c2) > 1)):
+        raise TypeError("both inputs must be single-character strings")
+    
+    # Check for allowed combinations
+    if c1.islower() and c2.islower():
+        return True
+    if c1.isupper() and c2.isupper():
+        return True
+    if c1.isdigit() and c2.isdigit():
+        return True
+    p = "!@#$%^&*()_-+=[]{}\\|;:'\",.<>/?`~"
+    if (c1 in p) and (c2 in p):
+        return True
+    
+    # If all tests failed, the swap is not allowed
+    return False
+
+#-----------------------------------------------------------------------------
+
+def _mistype_key(c):
+    """_mistype_key(c) -> str
+    Finds a key near the specified key.
+
+    Given a keyboard character, this function returns the character of an
+    adjacent key. Rectilinear moves are all equally likely, and diagonal moves
+    are equally likely but with a diminished weight of sqrt(2)/2 ~= 0.707.
+
+    Positional arguments:
+    c (str) -- keyboard character to replace
+
+    Returns:
+    (str) -- single character to replace the given character
+    """
+
+    # Validate input
+    if (type(c) != str) or (len(c) != 1):
+        raise TypeError("input key must be a single-character string")
+
+    # Find the keyboard list to which the character belongs
+    row = 0 # row index (0-3 for lowercase row, 4-7 for uppercase row)
+    while (row <= 7) and (c not in _KEYBOARD[row]):
+        row += 1
+
+    # If all rows passed without a match, change nothing
+    if row > 7:
+        return c
+
+    # Determine whether the key is on a boundary
+    col = _KEYBOARD[row].find(c) # column index
+    lb = False # left boundary
+    if col == 0:
+        lb = True
+    rb = False # right boundary
+    if col >= len(_KEYBOARD[row]) - 1:
+        rb = True
+    tb = False # top boundary
+    if row % 4 == 0:
+        tb = True
+    bb = False # bottom boundary
+    if row % 4 == 3:
+        bb = True
+
+    # Build a weighted list of adjacent keys
+    choices = {} # dictionary of weighted choices
+    if not lb:
+        choices[_KEYBOARD[row][col-1]] = 1
+        if not tb:
+            choices[_KEYBOARD[row-1][col-1]] = _COS45
+        if not bb:
+            choices[_KEYBOARD[row+1][col-1]] = _COS45
+    if not rb:
+        choices[_KEYBOARD[row][col+1]] = 1
+        if not tb:
+            choices[_KEYBOARD[row-1][col+1]] = _COS45
+        if not bb:
+            choices[_KEYBOARD[row+1][col+1]] = _COS45
+    if not tb:
+        choices[_KEYBOARD[row-1][col]] = 1
+    if not bb:
+        choices[_KEYBOARD[row+1][col]] = 1
+
+    # Randomly select an adjacent key
+    return _dictionary_sample(choices)
+
+#=============================================================================
+# Config file functions
+#=============================================================================
 
 def _read_config(fin, silent=False):
     """_read_config(fin[, silent])
@@ -258,7 +337,6 @@ def _read_config(fin, silent=False):
     # Validate input
     if type(fin) != str:
         raise TypeError("input argument must be a config file name string")
-        return None
     
     # Quit if config file has already been read
     if _CONFIG == fin:
@@ -266,7 +344,7 @@ def _read_config(fin, silent=False):
     
     # Read INI file and set (or reset) parameters
     if silent == False:
-        print("Reading config file '" + fin + "'.")
+        print("Reading config file '" + fin + "' ...")
     try:
         try:
             ### read fields one-by-one
@@ -278,12 +356,14 @@ def _read_config(fin, silent=False):
             ### print a message which specifies the key that does not exist
             key = "temp"###
             if silent == False:
-                print("Key " + key + " not found in '" + fin + "'.")
+                print("Key '" + key + "' not found in '" + fin + "'.")
                 print("Reverting to default parameters.")
             return _default_config(silent=silent)
     except FileNotFoundError:
         raise FileNotFoundError("config file " + fin + " not found")
-        return None
+    
+    if silent == False:
+        print("Config file successfully loaded!")
 
 #-----------------------------------------------------------------------------
 
@@ -360,114 +440,9 @@ def _default_config(silent=False, comments=True):
     if silent == False:
         print("Config file successfully reset!")
 
-#-----------------------------------------------------------------------------
-
-def _can_swap(c1, c2):
-    """_can_swap(c1, c2) -> bool
-    Defines whether a given pair of characters can swap.
-    
-    One of the allowed types of typographical error is for two characters to
-    switch position. This is allowed only when they are two letters of the
-    same case, or two numbers, or two punctuation marks.
-    
-    Positional arguments:
-    c1 (str) -- first character
-    c2 (str) -- second character
-    
-    Returns:
-    (bool) -- True if the swap is valid, False otherwise
-    """
-    
-    # Validate input
-    if ((type(c1) != str) or (type(c2) != str) or
-        (len(c1) > 1) or (len(c2) > 1)):
-        raise TypeError("both inputs must be single-character strings")
-        return False
-    
-    # Check for allowed combinations
-    if c1.islower() and c2.islower():
-        return True
-    if c1.isupper() and c2.isupper():
-        return True
-    if c1.isdigit() and c2.isdigit():
-        return True
-    p = "!@#$%^&*()_-+=[]{}\\|;:'\",.<>/?`~"
-    if (c1 in p) and (c2 in p):
-        return True
-    
-    # If all tests failed, the swap is not allowed
-    return False
-
-#-----------------------------------------------------------------------------
-
-def _mistype_key(c):
-    """_mistype_key(c) -> str
-    Finds a key near the specified key.
-
-    Given a keyboard character, this function returns the character of an
-    adjacent key. Rectilinear moves are all equally likely, and diagonal moves
-    are equally likely but with a diminished weight of sqrt(2)/2 ~= 0.707.
-
-    Positional arguments:
-    c (str) -- keyboard character to replace
-
-    Returns:
-    (str) -- single character to replace the given character
-    """
-
-    # Validate input
-    if (type(c) != str) or (len(c) != 1):
-        raise TypeError("input key must be a single-character string")
-        return None
-
-    # Find the keyboard list to which the character belongs
-    row = 0 # row index (0-3 for lowercase row, 4-7 for uppercase row)
-    while (row <= 7) and (c not in _KEYBOARD[row]):
-        row += 1
-
-    # If all rows passed without a match, change nothing
-    if row > 7:
-        return c
-
-    # Determine whether the key is on a boundary
-    col = _KEYBOARD[row].find(c) # column index
-    lb = False # left boundary
-    if col == 0:
-        lb = True
-    rb = False # right boundary
-    if col >= len(_KEYBOARD[row]) - 1:
-        rb = True
-    tb = False # top boundary
-    if row % 4 == 0:
-        tb = True
-    bb = False # bottom boundary
-    if row % 4 == 3:
-        bb = True
-
-    # Build a weighted list of adjacent keys
-    choices = {} # dictionary of weighted choices
-    if not lb:
-        choices[_KEYBOARD[row][col-1]] = 1
-        if not tb:
-            choices[_KEYBOARD[row-1][col-1]] = _COS45
-        if not bb:
-            choices[_KEYBOARD[row+1][col-1]] = _COS45
-        
-    if not rb:
-        choices[_KEYBOARD[row][col+1]] = 1
-        if not tb:
-            choices[_KEYBOARD[row-1][col+1]] = _COS45
-        if not bb:
-            choices[_KEYBOARD[row+1][col+1]] = _COS45
-    if not tb:
-        choices[_KEYBOARD[row-1][col]] = 1
-    if not bb:
-        choices[_KEYBOARD[row+1][col]] = 1
-
-    # Randomly select an adjacent key
-    return _dictionary_sample(choices)
-
-#-----------------------------------------------------------------------------
+#=============================================================================
+# General utility functions
+#=============================================================================
 
 def _dictionary_sample(dic):
     """_dictionary_sample(dic) -> key
@@ -485,7 +460,6 @@ def _dictionary_sample(dic):
     # Validate input
     if type(dic) != dict:
         raise TypeError("sample object must be a key/weight dictionary")
-        return None
 
     # Find total weight
     total = 0.0
@@ -504,7 +478,7 @@ def _dictionary_sample(dic):
 
     # Final stop for safety
     return list(dic)[0]
-   
+
 #=============================================================================
 # Public functions
 #=============================================================================
@@ -533,10 +507,8 @@ def misspell_string(s, mode=0, config="settings.ini", silent=False):
         mode = 0
     if type(s) != str:
         raise TypeError("input must be a string")
-        return None
     if type(config) != str:
         raise TypeError("config file name must be a string")
-        return None
     
     # Set config file (does nothing if no change)
     _read_config(config, silent=silent)
@@ -602,13 +574,10 @@ def misspell_file(fin, fout=None, mode=0, config="settings.ini",
         mode = 0
     if type(fin) != str:
         raise TypeError("input argument must be a file name string")
-        return None
     if type(fout) != str and fout != None:
         raise TypeError("output argument must be a file name string or None")
-        return None
     if type(config) != str:
         raise TypeError("config file name must be a string")
-        return None
     
     # Set config file (does nothing if no change)
     _read_config(config)
@@ -626,7 +595,6 @@ def misspell_file(fin, fout=None, mode=0, config="settings.ini",
                                             silent=silent)
     except FileNotFoundError:
         raise FileNotFoundError("input file " + fin + " not found")
-        return None
     
     # Write output string to a file or print to the screen
     if fout == None:
@@ -650,5 +618,5 @@ if __name__ == "__main__":
     # If given a string we need to manually run misspell_string() and print
     # the result here.
     ###
-    ###misspell_file("text/cthulhu.txt", mode=2)
-    _default_config()
+    misspell_file("text/cthulhu.txt", mode=2)
+    ###_default_config()

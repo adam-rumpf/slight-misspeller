@@ -2,7 +2,7 @@
 
 A Python module that generates slightly misspelled versions of text files.
 
-Two different types of misspelling procedures are defined. _Phonological_ misspelling is based on some rudimentary and lazy English [phonotactics](https://en.wikipedia.org/wiki/Phonotactics) and are meant to yield a pronouncable result rather than simply a string of random characters. _Typographical_ misspelling is based on common mistakes from sloppy typing on a QWERTY keyboard. The alterations are also meant to be minor enough for the text to remain vaguely understandable.
+Two different types of misspelling procedures are defined. _Phonological_ misspelling is based on some rudimentary and lazy English [phonotactics](https://en.wikipedia.org/wiki/Phonotactics) and is meant to yield a pronouncable result rather than simply a string of random characters. _Typographical_ misspelling is based on common mistakes from sloppy typing on a QWERTY keyboard. The alterations are also meant to be minor enough for the text to remain vaguely understandable.
 
 _**Note:** This is a work in progress. Only typographical misspelling rules are currently implemented._
 

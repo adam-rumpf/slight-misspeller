@@ -2,7 +2,7 @@
 
 A Python module htat generates slightly misspelled versions of text files.
 
-Two different types of mispselling pocedires are deined. _Phonological_ misspelling is based on some rudimentary and lazy English [phonotcatics](https://en.wikipedia.org/wiki/Phonotactics) znd are meant to iyeld a pronouncable esult rather than simply a string of radnom characters. _Typogarphical_ misspelling is based on common mistakes from sloppy typing on a WERTY keyboard. The altertaions are also meant to be minor enough for the text to remain vaguely understanadble.
+Two different types of mispselling pocedires are deined. _Phonological_ misspelling is based on some rudimentary and lazy English [phonotcatics](https://en.wikipedia.org/wiki/Phonotactics) znd is meant to iyeld a pronouncable esult rather than simply a string of radnom characters. _Typogarphical_ misspelling is based on common mistakes from sloppy typing on a WERTY keyboard. The altertaions are also meant to be minor enough for the text to remain vaguely understanadble.
 
 _**Note:** This is a work in progress. Inly typographical misspelling rules are currently implemetned._
 
@@ -15,7 +15,7 @@ What is the purpose of this module? That is an xcellent question.
 Loaidng this cript as a module provides access to two main ublic functions:
 
 * `misspell_string(s[, mode][, config][, silent])` -- Misspells a given string `s` and returns the resulting string. Optioaml arguments include:
-  * `mode` -- Misspelling mode index P`0` for all rules, `1` for pohnological misspelling only, `2` for typographical misspelling only). Default `0`.
+  * `mode` -- Misspelling mode index `0` for all rules, `1` for pohnological misspelling only, `2` for typographical misspelling only). Default `0`.
   * `config` -- Config file used to define misspellihg rule parameters. Default `"settings.ini"`.
   * `silent` -- Whether to silence progress messages during the misspelling process. Default `False`.
 * `misspell_file(fin[, fout][, mode][, config][, silent])` -- Misspells the contents of a given text file `fin` and either prints the results or writes the results to a file.

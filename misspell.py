@@ -325,7 +325,7 @@ def _read_config(fin, silent=False):
     most recent config file a second time has no effect.
     
     Positional arguments:
-    fin (str) -- config file name
+    fin (str) -- config file name, or None to do nothing
     
     Keyword arguments:
     [silent=False] (bool) -- whether to print progress messages to the screen
@@ -336,47 +336,55 @@ def _read_config(fin, silent=False):
     global _TYPO_SWAP, _TYPO_INSERT, _TYPO_REPLACE
     
     # Validate input
-    if type(fin) != str:
-        return None
-    
-    # Quit if config file has already been read
-    if _CONFIG == fin:
+    if type(fin) != str and fin != None:
         return None
 
-    # If the default config is selected, regenerate it
+    # Do nothing if input is None
+    if fin == None:
+        return None
+
+    # Do nothing if selected file has already been loaded
+    if fin == _CONFIG:
+        return None
+
+    # Regenerate default config
     if fin == _DEF_CONFIG:
+        _CONFIG = _DEF_CONFIG
         return _default_config(silent=silent)
     
     # Read INI file and set (or reset) parameters
     if silent == False:
         print("Reading config file '" + fin + "' ...")
-    try:
-        # Initialize config parser
-        config = configparser.ConfigParser(allow_no_value=True)
-        try:
-            with open(fin, 'r') as f:
-                config.read(f)
-        except FileNotFoundError:
-            if silent == False:
-                print("Config file '" + fin + "' not found.")
-                print("Reverting to default parameters.")
-            return _default_config(silent=silent)
         
-        ### read fields one-by-one
-        ### include input validation for each individual field
-        ###
-        ### _DELETE_CHAR, _TYPO_INSERT, and _TYPO_REPLACE should sum to <=1
-        pass
-    except KeyError:
-        ### print a message which specifies the key that does not exist
-        key = "temp"###
+    # Initialize config parser
+    config = configparser.ConfigParser(allow_no_value=True)
+
+    # Attempt to read config file
+    try:
+        with open(fin, 'r') as f:
+            config.read(f)
+    except FileNotFoundError:
         if silent == False:
-            print("Key '" + key + "' not found in '" + fin + "'.")
+            print("Config file '" + fin + "' not found.")
             print("Reverting to default parameters.")
         return _default_config(silent=silent)
+
+    # Extract information from config parser
+    for key in range(10):
+        try:
+            ### read fields one-by-one
+            pass
+        except KeyError:
+            if silent == False:
+                print("Key '" + key + "' not found in '" + fin + "'.")
+                print("Reverting to default parameters.")
+            return _default_config(silent=silent)
     
     if silent == False:
         print("Config file successfully loaded!")
+
+    # Update current config file
+    _CONFIG = fin
 
 #-----------------------------------------------------------------------------
 
@@ -507,6 +515,7 @@ def misspell_string(s, mode=0, config=_DEF_CONFIG, silent=False):
     [mode=0] (int) -- code for misspelling rules to apply (default 0 for all,
         1 for phonological only, 2 for typographical only)
     [config="settings.ini"] (str) -- config file name to control parameters
+        (defaults to standard config file, or None to skip the file loading)
     [silent=False] (bool) -- whether to print progress messages to the screen
     
     Returns:
@@ -520,11 +529,12 @@ def misspell_string(s, mode=0, config=_DEF_CONFIG, silent=False):
         mode = 0
     if type(s) != str:
         sys.exit("input must be a string")
-    if type(config) != str:
-        sys.exit("config file name must be a string")
+    if type(config) != str and config != None:
+        sys.exit("config file name must be a string or None")
     
     # Set config file (does nothing if no change)
-    _read_config(config, silent=silent)
+    if config != None:
+        _read_config(config, silent=silent)
     
     # Translate line-by-line and word-by-word
     out_text = "" # complete output string
@@ -577,6 +587,7 @@ def misspell_file(fin, fout=None, mode=0, config=_DEF_CONFIG,
     [mode=0] (int) -- code for misspelling rules to apply (default 0 for all,
         1 for phonological only, 2 for typographical only)
     [config="settings.ini"] (str) -- config file name to control parameters
+        (defaults to standard config file, or None to skip the file loading)
     [silent=False] (bool) -- whether to print progress messages to the screen
     """
     
@@ -589,11 +600,12 @@ def misspell_file(fin, fout=None, mode=0, config=_DEF_CONFIG,
         sys.exit("input argument must be a file name string")
     if type(fout) != str and fout != None:
         sys.exit("output argument must be a file name string or None")
-    if type(config) != str:
-        sys.exit("config file name must be a string")
+    if type(config) != str and config != None:
+        sys.exit("config file name must be a string or None")
     
     # Set config file (does nothing if no change)
-    _read_config(config)
+    if config != None:
+        _read_config(config)
     
     # Translate file line-by-line
     try:
@@ -604,7 +616,7 @@ def misspell_file(fin, fout=None, mode=0, config=_DEF_CONFIG,
             out_text = "" # complete output string
             for line in f:
                 # Call string misspeller for each line
-                out_text += misspell_string(line, mode=mode, config=config,
+                out_text += misspell_string(line, mode=mode, config=None,
                                             silent=silent)
     except FileNotFoundError:
         sys.exit("input file " + fin + " not found")
@@ -631,5 +643,5 @@ if __name__ == "__main__":
     # If given a string we need to manually run misspell_string() and print
     # the result here.
     ###
-    misspell_file("text/cthulhu.txt", mode=2)
+    misspell_file("text/cthulhu.txt", mode=2, config="custom.ini")
     ###_default_config()

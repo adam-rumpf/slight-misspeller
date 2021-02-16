@@ -31,6 +31,7 @@ import configparser
 import math
 import random
 import re
+import sys
 
 #=============================================================================
 # Global parameters
@@ -130,7 +131,7 @@ def _misspell_word(w, mode=0):
     if mode not in {0, 1, 2}:
         mode = 0
     if type(w) != str:
-        raise TypeError("argument must be a string")
+        return w
     
     # Special typographical procedures for whitespace
     w0 = "" # post-whitespace deletion string
@@ -196,7 +197,7 @@ def _misspell_syllable(s):
     
     # Validate input
     if type(s) != str:
-        raise TypeError("argument must be a string")
+        return s
     
     ###
     # Steps:
@@ -228,7 +229,7 @@ def _can_swap(c1, c2):
     # Validate input
     if ((type(c1) != str) or (type(c2) != str) or
         (len(c1) > 1) or (len(c2) > 1)):
-        raise TypeError("both inputs must be single-character strings")
+        return False
     
     # Check for allowed combinations
     if c1.islower() and c2.islower():
@@ -263,7 +264,7 @@ def _mistype_key(c):
 
     # Validate input
     if (type(c) != str) or (len(c) != 1):
-        raise TypeError("input key must be a single-character string")
+        return c
 
     # Find the keyboard list to which the character belongs
     row = 0 # row index (0-3 for lowercase row, 4-7 for uppercase row)
@@ -336,31 +337,43 @@ def _read_config(fin, silent=False):
     
     # Validate input
     if type(fin) != str:
-        raise TypeError("input argument must be a config file name string")
+        return None
     
     # Quit if config file has already been read
     if _CONFIG == fin:
         return None
+
+    # If the default config is selected, regenerate it
+    if fin == _DEF_CONFIG:
+        return _default_config(silent=silent)
     
     # Read INI file and set (or reset) parameters
     if silent == False:
         print("Reading config file '" + fin + "' ...")
     try:
+        # Initialize config parser
+        config = configparser.ConfigParser(allow_no_value=True)
         try:
-            ### read fields one-by-one
-            ### include input validation for each individual field
-            ###
-            ### _DELETE_CHAR, _TYPO_INSERT, and _TYPO_REPLACE should sum to <=1
-            pass
-        except KeyError:
-            ### print a message which specifies the key that does not exist
-            key = "temp"###
+            with open(fin, 'r') as f:
+                config.read(f)
+        except FileNotFoundError:
             if silent == False:
-                print("Key '" + key + "' not found in '" + fin + "'.")
+                print("Config file '" + fin + "' not found.")
                 print("Reverting to default parameters.")
             return _default_config(silent=silent)
-    except FileNotFoundError:
-        raise FileNotFoundError("config file " + fin + " not found")
+        
+        ### read fields one-by-one
+        ### include input validation for each individual field
+        ###
+        ### _DELETE_CHAR, _TYPO_INSERT, and _TYPO_REPLACE should sum to <=1
+        pass
+    except KeyError:
+        ### print a message which specifies the key that does not exist
+        key = "temp"###
+        if silent == False:
+            print("Key '" + key + "' not found in '" + fin + "'.")
+            print("Reverting to default parameters.")
+        return _default_config(silent=silent)
     
     if silent == False:
         print("Config file successfully loaded!")
@@ -459,7 +472,7 @@ def _dictionary_sample(dic):
 
     # Validate input
     if type(dic) != dict:
-        raise TypeError("sample object must be a key/weight dictionary")
+        return None
 
     # Find total weight
     total = 0.0
@@ -483,7 +496,7 @@ def _dictionary_sample(dic):
 # Public functions
 #=============================================================================
 
-def misspell_string(s, mode=0, config="settings.ini", silent=False):
+def misspell_string(s, mode=0, config=_DEF_CONFIG, silent=False):
     """misspell_string(s[, mode][, config][, silent]) -> str
     Returns a misspelled version of a given string.
     
@@ -506,9 +519,9 @@ def misspell_string(s, mode=0, config="settings.ini", silent=False):
             print("unrecognized mode index; defaulting to 0 ('all')")
         mode = 0
     if type(s) != str:
-        raise TypeError("input must be a string")
+        sys.exit("input must be a string")
     if type(config) != str:
-        raise TypeError("config file name must be a string")
+        sys.exit("config file name must be a string")
     
     # Set config file (does nothing if no change)
     _read_config(config, silent=silent)
@@ -548,7 +561,7 @@ def misspell_string(s, mode=0, config="settings.ini", silent=False):
 
 #-----------------------------------------------------------------------------
 
-def misspell_file(fin, fout=None, mode=0, config="settings.ini",
+def misspell_file(fin, fout=None, mode=0, config=_DEF_CONFIG,
                   silent=False):
     """misspell_file(fin[, fout][, mode][, config][, silent])
     Writes a misspelled version of a given text file.
@@ -573,11 +586,11 @@ def misspell_file(fin, fout=None, mode=0, config="settings.ini",
             print("unrecognized mode index; defaulting to 0 ('all')")
         mode = 0
     if type(fin) != str:
-        raise TypeError("input argument must be a file name string")
+        sys.exit("input argument must be a file name string")
     if type(fout) != str and fout != None:
-        raise TypeError("output argument must be a file name string or None")
+        sys.exit("output argument must be a file name string or None")
     if type(config) != str:
-        raise TypeError("config file name must be a string")
+        sys.exit("config file name must be a string")
     
     # Set config file (does nothing if no change)
     _read_config(config)
@@ -594,7 +607,7 @@ def misspell_file(fin, fout=None, mode=0, config="settings.ini",
                 out_text += misspell_string(line, mode=mode, config=config,
                                             silent=silent)
     except FileNotFoundError:
-        raise FileNotFoundError("input file " + fin + " not found")
+        sys.exit("input file " + fin + " not found")
     
     # Write output string to a file or print to the screen
     if fout == None:

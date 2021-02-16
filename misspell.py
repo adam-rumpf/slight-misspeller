@@ -46,7 +46,7 @@ _CONFIG_COMMENTS = """;
 ; The fields below can be manually edited to change the behavior of the
 ; misspelling algorithms in 'misspell.py'.
 ;
-; [typographical]
+; [typo]
 ;
 ; Defines parameters for typographical misspelling (conducted after all
 ; phonological misspelling). All fields specify probabilities between 0.0 and
@@ -65,6 +65,10 @@ _CONFIG_COMMENTS = """;
 ;     exclusive with delete_char and replace
 ; replace -- chance to replace any given non-whitespace character with one next
 ;     to it on the keyboard; mutually exclusive with delete_char and insert
+;
+; [phono]
+;
+; TBD
 ;
 ; [blacklist]
 ;
@@ -100,7 +104,6 @@ _TYPO_INSERT = _DEF_TYPO_INSERT
 _TYPO_REPLACE = _DEF_TYPO_REPLACE
 
 ### Other parameters:
-### Typographical: extra adjacent letter, replacement adjacent letter
 ### Phonological: onset replacement, nucleus replacement, coda replacement,
 ### transpositions
 
@@ -359,26 +362,72 @@ def _read_config(fin, silent=False):
     # Initialize config parser
     config = configparser.ConfigParser(allow_no_value=True)
 
-    # Attempt to read config file
+    # Check that config file exists
     try:
         with open(fin, 'r') as f:
-            config.read(f)
+            pass
     except FileNotFoundError:
         if silent == False:
             print("Config file '" + fin + "' not found.")
             print("Reverting to default parameters.")
         return _default_config(silent=silent)
 
-    # Extract information from config parser
-    for key in range(10):
-        try:
-            ### read fields one-by-one
-            pass
-        except KeyError:
-            if silent == False:
-                print("Key '" + key + "' not found in '" + fin + "'.")
-                print("Reverting to default parameters.")
-            return _default_config(silent=silent)
+    # Read config file
+    config.read(fin)
+    
+    # Read typographical section
+    try:
+        key = "delete_space"
+        _TYPO_DELETE_SPACE = float(config["typo"][key])
+        key = "delete_char"
+        _TYPO_DELETE_CHAR = float(config["typo"][key])
+        key = "swap"
+        _TYPO_SWAP = float(config["typo"][key])
+        key = "insert"
+        _TYPO_INSERT = float(config["typo"][key])
+        key = "replace"
+        _TYPO_REPLACE = float(config["typo"][key])
+    except KeyError:
+        if silent == False:
+            print("Key '" + key + "' from 'typo' section not found in '" + fin
+                  + "'.")
+            print("Reverting to default parameters.")
+        return _default_config(silent=silent)
+    except ValueError:
+        if silent == False:
+            print("Key '" + key + "' from 'typo' section in '" + fin +
+                  "' should be a number.")
+            print("Reverting to default parameters.")
+        return _default_config(silent=silent)
+
+    # Validate all typographical parameters as probabilities on [0.0,1.0]
+    valid = True
+    if _TYPO_DELETE_SPACE < 0 or _TYPO_DELETE_SPACE > 1:
+        valid = False
+    if _TYPO_DELETE_CHAR < 0 or _TYPO_DELETE_CHAR > 1:
+        valid = False
+    if _TYPO_SWAP < 0 or _TYPO_SWAP > 1:
+        valid = False
+    if _TYPO_INSERT < 0 or _TYPO_INSERT > 1:
+        valid = False
+    if _TYPO_REPLACE < 0 or _TYPO_REPLACE > 1:
+        valid = False
+    if _TYPO_DELETE_CHAR + _TYPO_INSERT + _TYPO_REPLACE > 1:
+        valid = False
+    if valid == False:
+        if silent == False:
+            print("Invalid 'typo' parameter read in '" + fin + "'.")
+            print("All parameters should be probabilities between 0.0 and 1.0.")
+            print("The sum of 'delete_char', 'insert', and 'replace' should " +
+                  "not exceed 1.0.")
+            print("Reverting to default parameters.")
+        return _default_config(silent=silent)
+
+    # Read blacklist (section not required)
+    if "blacklist" in config.sections():
+        _BLACKLIST = tuple(dict(config.items("blacklist")))
+    else:
+        _BLACKLIST = _DEF_BLACKLIST
     
     if silent == False:
         print("Config file successfully loaded!")
@@ -423,7 +472,7 @@ def _default_config(silent=False, comments=True):
     dic["swap"] = _TYPO_SWAP
     dic["insert"] = _TYPO_INSERT
     dic["replace"] = _TYPO_REPLACE
-    config["typographical"] = dic
+    config["typo"] = dic
     del dic
 
     ###

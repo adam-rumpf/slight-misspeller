@@ -5,11 +5,15 @@ files into slightly misspelled versions of themselves.
 
 If imported, these functions can be called directly. The following is a
 summary of the public functions:
-    misspell_string(s[, config]) -- returns a misspelled version of a given
-        string s (optional argument specifies custom settings file)
-    misspell_file(fin[, fout][, config]) -- writes a misspelled version of a
-        given input file (or prints to screen if no output is given; optional
-        argument specifies a custom settings file)
+
+misspell_string(s[, config]) -- returns a misspelled version of a given string
+    s (optional argument specifies custom settings file)
+misspell_file(fin[, fout][, config]) -- writes a misspelled version of a given
+    input file (or prints to screen if no output is given; optional argument
+    specifies a custom settings file)
+
+Command line arguments are also supported. Call "misspell.py --help" for a
+complete guide.
 
 Two different types of misspelling rule are defined: phonological misspelling,
 which attempts to change the sounds of the words while still yielding a
@@ -21,9 +25,8 @@ The parameters which control the specifics of the misspelling process are
 defined in a local INI file. If not already present, running any public
 function generates a default file called "settings.ini". This file can be
 manually edited to change the behavior of the algorithm, or it can be used as
-a template for creating different settings profiles. Each public method
-accepts an optional "config" keywoard argument to specify a non-standard
-settings file.
+a template for creating different settings profiles. See the comments in the
+default config file for a complete guide.
 """
 
 import argparse
@@ -38,9 +41,28 @@ import sys
 #=============================================================================
 
 # Define docstrings
-_VERSION = """Slight Misspeller v0.1.0-beta
+_VERSION = """Slight Misspeller v0.2.0-beta
 Copyright (c) 2021 Adam Rumpf <adam-rumpf.github.io>
 Released under MIT license <github.com/adam-rumpf/slight-misspeller>
+"""
+_DESCRIPTION = "Slightly misspells a string or file."
+_EPILOG = """
+The first argument may be either a string to convert, or the name of an input
+file. The optional second argument specifies an output file. If excluded, the
+result is instead printed to the screen.
+
+Two different types of misspelling rule are defined: phonological misspelling,
+which attempts to change the sounds of the words while still yielding a
+pronounceable English word, and typographical misspelling, which simulates
+random mistyping errors to replace letters without regard for
+pronounceability.
+
+The parameters which control the specifics of the misspelling process are
+defined in a local INI file. If not already present, running this script
+generates a default file called "settings.ini". This file can be manually
+edited to change the behavior of the algorithm, or it can be used as a template
+for creating different settings profiles. See the comments in the default
+config file for a complete guide.
 """
 _CONFIG_COMMENTS = """; 
 ; The fields below can be manually edited to change the behavior of the
@@ -672,7 +694,7 @@ def misspell_file(fin, fout=None, mode=0, config=_DEF_CONFIG,
     
     # Write output string to a file or print to the screen
     if fout == None:
-        print('\n' + '>'*10 + '\n' + out_text)
+        print('\n' + '>'*10 + '\n\n' + out_text)
     else:
         with open(fout, 'w') as f:
             f.write(out_text)
@@ -684,13 +706,49 @@ def misspell_file(fin, fout=None, mode=0, config=_DEF_CONFIG,
 #=============================================================================
 
 if __name__ == "__main__":
-    ###
+
+    # Initialize argument parser and mudually exclusive group
+    parser = argparse.ArgumentParser(description=_DESCRIPTION, epilog=_EPILOG,
+                                     formatter_class=
+                                     argparse.RawDescriptionHelpFormatter)
+    group = parser.add_mutually_exclusive_group()
+
+    # Define arguments
+    parser.add_argument("-v", "--version", action="version", version=_VERSION)
+    parser.add_argument("instring",
+                        help="input file (or string with the --string tag)")
+    parser.add_argument("outstring", nargs="?", help="output file")
+    parser.add_argument("-i", "--init-file", default=_DEF_CONFIG,
+                        help="misspeller parameter config file", dest="config")
+    parser.add_argument("-s", "--string", action="store_true",
+                        help=("interpret 'instring' as a raw string rather " +
+                              "than a file path"))
+    group.add_argument("-p", "--phono", action="store_true",
+                       help="apply only phonological misspelling rules")
+    group.add_argument("-t", "--typo", action="store_true",
+                       help="apply only typographical misspelling rules")
+    parser.add_argument("-q", "--quiet", action="store_true", dest="silent",
+                        help="silence progress messages")
+
     # Parse command line arguments
-    # If help or version is requested, just print that and quit
-    # If a custom INI file is requested, read that first
-    # Finally move on to processing the input string or file
-    # If given a string we need to manually run misspell_string() and print
-    # the result here.
-    ###
-    misspell_file("text/cthulhu.txt", mode=2, config="custom.ini")
-    ###_default_config()
+    args = parser.parse_args()
+
+    # Use arguments to call an appropriate public function
+    mode = 0
+    if args.phono == True:
+        mode = 1
+    if args.typo == True:
+        mode = 2
+    if args.string == True:
+        s = misspell_string(args.instring, mode=mode, config=args.config,
+                            silent=args.silent)
+        if args.outstring == None:
+            print(s)
+        else:
+            with open(args.outstring, 'w') as f:
+                f.write(s)
+                if args.silent == False:
+                    print("Output file '" + args.outstring + "' written.")
+    else:
+        misspell_file(args.instring, args.outstring, mode=mode,
+                      config=args.config, silent=args.silent)

@@ -719,7 +719,9 @@ if __name__ == "__main__":
     parser.add_argument("-v", "--version", action="version", version=_VERSION)
     parser.add_argument("instring",
                         help="input file (or string with the --string tag)")
-    parser.add_argument("outstring", nargs="?", help="output file")
+    parser.add_argument("outstring", nargs="?",
+                        help="output file (leave empty to print result to " +
+                        "screen)")
     parser.add_argument("-i", "--init-file", default=_DEF_CONFIG,
                         help="misspeller parameter config file", dest="config")
     parser.add_argument("-s", "--string", action="store_true",

@@ -42,9 +42,9 @@ import sys
 #=============================================================================
 
 # Define docstrings
-_VERSION = """Slight Misspeller v0.3.0-beta
+_VERSION = """Slight Misspeller v0.3.1-beta
 Copyright (c) 2021 Adam Rumpf <adam-rumpf.github.io>
-Released under MIT license <github.com/adam-rumpf/slight-misspeller>
+Released under MIT License <github.com/adam-rumpf/slight-misspeller>
 """
 _DESCRIPTION = "Slightly misspells a string or file."
 _EPILOG = """
@@ -150,7 +150,7 @@ def _misspell_word(w, mode=0):
         1 for phonological only, 2 for typographical only)
     
     Returns:
-    str -- misspelled version of word
+    (str) -- misspelled version of word
     """
     
     # Validate input
@@ -218,7 +218,7 @@ def _misspell_syllable(s):
     s (str) -- syllable to be misspelled
     
     Returns:
-    str -- misspelled syllable
+    (str) -- misspelled syllable
     """
     
     # Validate input
@@ -592,7 +592,7 @@ def misspell_string(s, mode=0, config=_DEF_CONFIG, silent=False):
     [silent=False] (bool) -- whether to print progress messages to the screen
     
     Returns:
-    str -- misspelled version of string
+    (str) -- misspelled version of string
     """
     
     # Validate input
@@ -707,9 +707,9 @@ def misspell_file(fin, fout=None, mode=0, config=_DEF_CONFIG,
 # Command line usage
 #=============================================================================
 
-if __name__ == "__main__":
+if __name__ == "__main__" and len(sys.argv) > 1:
 
-    # Initialize argument parser and mudually exclusive group
+    # Initialize argument parser and mutually exclusive group
     parser = argparse.ArgumentParser(description=_DESCRIPTION, epilog=_EPILOG,
                                      formatter_class=
                                      argparse.RawDescriptionHelpFormatter)

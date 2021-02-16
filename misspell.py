@@ -32,6 +32,7 @@ default config file for a complete guide.
 import argparse
 import configparser
 import math
+import os.path
 import random
 import re
 import sys
@@ -41,7 +42,7 @@ import sys
 #=============================================================================
 
 # Define docstrings
-_VERSION = """Slight Misspeller v0.2.0-beta
+_VERSION = """Slight Misspeller v0.3.0-beta
 Copyright (c) 2021 Adam Rumpf <adam-rumpf.github.io>
 Released under MIT license <github.com/adam-rumpf/slight-misspeller>
 """
@@ -359,6 +360,10 @@ def _read_config(fin, silent=False):
     # Global parameters to be edited
     global _CONFIG, _BLACKLIST, _TYPO_DELETE_SPACE, _TYPO_DELETE_CHAR
     global _TYPO_SWAP, _TYPO_INSERT, _TYPO_REPLACE
+
+    # Generate default config if it does not exist
+    if os.path.exists(_DEF_CONFIG) == False:
+        _default_config(silent=silent)
     
     # Validate input
     if type(fin) != str and fin != None:
@@ -384,11 +389,8 @@ def _read_config(fin, silent=False):
     # Initialize config parser
     config = configparser.ConfigParser(allow_no_value=True)
 
-    # Check that config file exists
-    try:
-        with open(fin, 'r') as f:
-            pass
-    except FileNotFoundError:
+    # Verify that config file exists
+    if os.path.exists(fin) == False:
         if silent == False:
             print("Config file '" + fin + "' not found.")
             print("Reverting to default parameters.")

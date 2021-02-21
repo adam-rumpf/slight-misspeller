@@ -22,7 +22,7 @@ Loading this script as a module provides access to two main public functions:
   * `fout` -- Output file path for the misspelled version of `fin`. Default `None`, in which case the result is printed to the screen. If a file path is provided, the result is instead written to that file.
   * `mode` -- Misspelling mode index (`0` for all rules, `1` for phonological misspelling only, `2` for typographical misspelling only). Default `0`.
   * `config` -- Config file used to define misspelling rule parameters. Default `"settings.ini"`.
-  * `silent` -- Whether to silence progress messages during the misspelling process. Default `False`.'
+  * `silent` -- Whether to silence progress messages during the misspelling process. Default `False`.
 
 ## Command Line Usage
 

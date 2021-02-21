@@ -106,7 +106,7 @@ _CONSONANTS = "bcdfghjklmnpqrstvwxyz"
 _KEYBOARD = ["1234567890", "qwertyuiop", "asdfghjkl;", "zxcvbnm,./",
              "!@#$%^&*()", "QWERTYUIOP", "ASDFGHJKL:", "ZXCVBNM<>?"]
 _COS45 = math.sqrt(2)/2
-### Also include any sets needed to define phonological misspelling rules.
+### Load phonological rules from an external file.
 
 # Define default global parameters
 _DEF_CONFIG = "settings.ini" # currently-loaded config file name
@@ -116,6 +116,7 @@ _DEF_TYPO_SWAP = 0.0075 # chance to swap consecutive characters
 _DEF_TYPO_DELETE_CHAR = 0.0075 # chance to delete any non-whitespace character
 _DEF_TYPO_INSERT = 0.001 # chance to insert a letter from an adjacent key
 _DEF_TYPO_REPLACE = 0.0025 # chance to mistype a letter as an adjacent key
+### Define phonological parameters
 
 # Set global parameters to default values
 _CONFIG = _DEF_CONFIG
@@ -125,10 +126,7 @@ _TYPO_SWAP = _DEF_TYPO_SWAP
 _TYPO_DELETE_CHAR = _DEF_TYPO_DELETE_CHAR
 _TYPO_INSERT = _DEF_TYPO_INSERT
 _TYPO_REPLACE = _DEF_TYPO_REPLACE
-
-### Other parameters:
-### Phonological: onset replacement, nucleus replacement, coda replacement,
-### transpositions
+### Define phonological parameters
 
 #=============================================================================
 # Misspelling algorithms
@@ -177,33 +175,47 @@ def _misspell_word(w, mode=0):
         s = [x for x in re.split("(["+_VOWELS+"]+)|(["+_CONSONANTS+"]+)",
              w1, flags=re.IGNORECASE) if x]
         
-        ### Apply phonological misspelling to each cluster.
-        ### Do not edit punctuation clusters.
-        ### Treat each vowel cluster as a nucleus.
-        ### Treat each consonant cluster as a coda, unless the word begins
-        ### with one, in which case treat that first consonant cluster as an
-        ### onset.
-        ### Take note of whether any letters in the cluster are capitalized.
-        ### If none, capitalize nothing, if all, capitalize all, and if
-        ### the first is capital, capitalize only the first. If anything else,
-        ### maintain the capitalization of any replaced symbols, and randomize
-        ### inserted symbols.
+        ### Phonological misspelling procedure:
+        ### Divide word into blocks.
         ###
-        ### Once the clusters have been parsed, randomly perform different
-        ### types of transformation. Any given letter should have a chance to
-        ### be either deleted, have a new valid character inserted next to it,
-        ### or replaced with a different valid character, all subject to
-        ### passing rules defined by whitelisted and blacklisted letter
-        ### combinations. Finally we consider transposing syllable blocks.
-        ### If the current letter is chosen for transformation, check its
-        ### neighbors to see if it's part of a defined letter cluster ("th",
-        ### "ch", "sh", "qu", etc.) and with some probability choose to alter
-        ### the entire cluster as if it were a single character (this is
-        ### more complicated for "qu" since that's one consonant and one
-        ### vowel).
+        ### Go through each block one-at-a-time, and use its relationship with
+        ### the other blocks to determine which rules to apply (C beginning,
+        ### C after V, V before C, V at end, V only, C in a VC word, V in a
+        ### VC word)
         ###
-        ### If the attempted transformation fails, try again up to a small
-        ### threshold.
+        ### Go through each letter in the block and decide whether to apply
+        ### any transformations. If the letter is part of a possible group,
+        ### consider grouping it alongside an adjacent letter (which could
+        ### be part of the next block, if this is the final letter in the
+        ### current block).
+        ###
+        ### Possible transformations include: deleting the letter (or pair),
+        ### replacing the letter (or pair) with another of the same type,
+        ### and inserting another letter of the same type before or after.
+        ###
+        ### Randomly generate a move of the chosen type, and check the
+        ### resulting letter block against blacklisted substrings for its
+        ### block type. If there's no problem, apply the change, and
+        ### otherwise reroll to attempt a different type of change (up to
+        ### a limit).
+        ###
+        ### During this entire process, keep track of our current place
+        ### within the current block. By default it should advance by 1
+        ### with each character, but go back 1 whenever we delete a
+        ### character or forward by 1 whenever we insert one. We could
+        ### generalize this process by simply remembering the length of the
+        ### block before and after to compare the two, and offset our
+        ### current position by 1 + new_length - old_length. The loop should
+        ### be while our current position is less than the block's length.
+        ###
+        ### Finally, if the word includes enough blocks, consider
+        ### transposing one VC block with another VC block.
+        ###
+        ### During this process, preserve the capitalization of the block.
+        ### Keep to a single case if the entire block was a single case, and
+        ### capitalize only the beginning if only the beginning was
+        ### capitalized. If anything else, randomly choose cases for any
+        ### new letters.
     
     # Apply typographical rules
     w2 = "" # post-typographical misspelling string

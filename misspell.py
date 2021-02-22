@@ -32,7 +32,6 @@ default config file for a complete guide.
 import argparse
 import configparser
 import math
-import os.path
 import pathlib
 import random
 import re
@@ -111,6 +110,8 @@ _BLOCKS = ("c", "v", "vc", "c_b", "v_w", "cv_w")
 
 # Define default global parameters
 _DEF_CONFIG = "settings.ini" # currently-loaded config file name
+_DEF_DATA = "data" # data file directory
+_DEF_RULES = "rules.ini" # phonological rule file name
 _DEF_BLACKLIST = () # words to prevent the program from accidentally creating
 _DEF_TYPO_DELETE_SPACE = 0.005 # chance to delete any whitespace character
 _DEF_TYPO_SWAP = 0.0075 # chance to swap consecutive characters
@@ -408,7 +409,7 @@ def _read_config(fin, silent=False):
     global _TYPO_SWAP, _TYPO_INSERT, _TYPO_REPLACE
 
     # Generate default config if it does not exist
-    if os.path.exists(_DEF_CONFIG) == False:
+    if pathlib.Path(_DEF_CONFIG).exists() == False:
         _default_config(silent=silent)
     
     # Validate input
@@ -436,7 +437,7 @@ def _read_config(fin, silent=False):
     config = configparser.ConfigParser(allow_no_value=True)
 
     # Verify that config file exists
-    if os.path.exists(fin) == False:
+    if pathlib.Path(fin).exists() == False:
         if silent == False:
             print("Config file '" + fin + "' not found.")
             print("Reverting to default parameters.")
@@ -599,16 +600,22 @@ def _read_rules(silent=False):
         print("Reading phonological rule data ...")
 
     # Define file path to data file
-    fin = pathlib.PurePath(__file__).parent / "data" / "rules.ini"
+    fin = pathlib.PurePath(__file__).parent / _DEF_DATA / _DEF_RULES
+
+    # Initialize data file parser
+    config = configparser.ConfigParser(allow_no_value=True)
 
     # Verify that config file exists
-    if os.path.exists(fin) == False:
+    if pathlib.Path(fin).exists() == False:
+        # If not, return an empty parser
         if silent == False:
             print("Rule data not found. Ignoring phonological rules.")
-        return None
+        config["group"] = {}
+        for b in _BLOCKS:
+            config[b] = {}
+        return config
 
-    # Attempt to open and parse data file
-    config = configparser.ConfigParser(allow_no_value=True)
+    # Read data file
     config.read(fin)
 
     # Verify that all needed fields are present

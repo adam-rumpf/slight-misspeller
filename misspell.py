@@ -33,6 +33,7 @@ import argparse
 import configparser
 import math
 import os.path
+import pathlib
 import random
 import re
 import sys
@@ -42,7 +43,7 @@ import sys
 #=============================================================================
 
 # Define docstrings
-_VERSION = """Slight Misspeller v0.3.0-beta
+_VERSION = """Slight Misspeller v0.4.0-beta
 Copyright (c) 2021 Adam Rumpf <adam-rumpf.github.io>
 Released under MIT License <github.com/adam-rumpf/slight-misspeller>
 """
@@ -106,7 +107,7 @@ _CONSONANTS = "bcdfghjklmnpqrstvwxyz"
 _KEYBOARD = ["1234567890", "qwertyuiop", "asdfghjkl;", "zxcvbnm,./",
              "!@#$%^&*()", "QWERTYUIOP", "ASDFGHJKL:", "ZXCVBNM<>?"]
 _COS45 = math.sqrt(2)/2
-### Load phonological rules from an external file.
+_BLOCKS = ("c", "v", "vc", "c_b", "v_w", "cv_w")
 
 # Define default global parameters
 _DEF_CONFIG = "settings.ini" # currently-loaded config file name
@@ -116,7 +117,7 @@ _DEF_TYPO_SWAP = 0.0075 # chance to swap consecutive characters
 _DEF_TYPO_DELETE_CHAR = 0.0075 # chance to delete any non-whitespace character
 _DEF_TYPO_INSERT = 0.001 # chance to insert a letter from an adjacent key
 _DEF_TYPO_REPLACE = 0.0025 # chance to mistype a letter as an adjacent key
-### Define phonological parameters
+### Define phonological constants
 
 # Set global parameters to default values
 _CONFIG = _DEF_CONFIG
@@ -132,8 +133,8 @@ _TYPO_REPLACE = _DEF_TYPO_REPLACE
 # Misspelling algorithms
 #=============================================================================
 
-def _misspell_word(w, mode=0):
-    """_misspell_word(w[, mode]) -> str
+def _misspell_word(w, mode=0, rules=None):
+    """_misspell_word(w[, mode][, rules]) -> str
     Misspells a single word string.
     
     This function is called repeatedly by the main driver to misspell each
@@ -146,6 +147,9 @@ def _misspell_word(w, mode=0):
     Keyword arguments:
     [mode=0] (int) -- code for misspelling rules to apply (default 0 for all,
         1 for phonological only, 2 for typographical only)
+    [rules=None] (configparser.ConfigParser) -- config parser for phonological
+        misspelling rules, containing dictionaries of forbidden substrings and
+        letter groups
     
     Returns:
     (str) -- misspelled version of word
@@ -155,6 +159,8 @@ def _misspell_word(w, mode=0):
     if mode not in {0, 1, 2}:
         mode = 0
     if type(w) != str:
+        return w
+    if type(rules) != type(configparser.ConfigParser()) and rules != None:
         return w
     
     # Special typographical procedures for whitespace
@@ -174,6 +180,8 @@ def _misspell_word(w, mode=0):
         # Split string into consonant/vowel/punctuation clusters
         s = [x for x in re.split("(["+_VOWELS+"]+)|(["+_CONSONANTS+"]+)",
              w1, flags=re.IGNORECASE) if x]
+
+        ### Note: 'rules' could be either a config parser or None.
         
         ### Phonological misspelling procedure:
         ### Divide word into blocks.
@@ -377,7 +385,7 @@ def _mistype_key(c):
     return _dictionary_sample(choices)
 
 #=============================================================================
-# Config file functions
+# Resource file functions
 #=============================================================================
 
 def _read_config(fin, silent=False):
@@ -572,6 +580,50 @@ def _default_config(silent=False, comments=True):
     if silent == False:
         print("Config file successfully reset!")
 
+#-----------------------------------------------------------------------------
+
+def _read_rules(silent=False):
+    """_read_rules() -> configparser.ConfigParser
+    Reads the rules resource INI file for phonological misspelling rules.
+
+    Keyword arguments:
+    [silent=False] (bool) -- whether to print progress messages to the screen
+    
+    Returns:
+    (configparser.ConfigParser) -- parser object of phonological misspelling
+        rules, including forbidden substrings within different word blocks and
+        letter groups
+    """
+
+    if silent == False:
+        print("Reading phonological rule data ...")
+
+    # Define file path to data file
+    fin = pathlib.PurePath(__file__).parent / "data" / "rules.ini"
+
+    # Verify that config file exists
+    if os.path.exists(fin) == False:
+        if silent == False:
+            print("Rule data not found. Ignoring phonological rules.")
+        return None
+
+    # Attempt to open and parse data file
+    config = configparser.ConfigParser(allow_no_value=True)
+    config.read(fin)
+
+    # Verify that all needed fields are present
+    if "group" not in config:
+        config["group"] = {}
+    for b in _BLOCKS:
+        if b not in config:
+            config[b] = {}
+
+    if silent == False:
+        print("Phonological rules loaded!")
+    
+    # Return the parser
+    return config
+
 #=============================================================================
 # General utility functions
 #=============================================================================
@@ -615,8 +667,9 @@ def _dictionary_sample(dic):
 # Public functions
 #=============================================================================
 
-def misspell_string(s, mode=0, config=_DEF_CONFIG, silent=False):
-    """misspell_string(s[, mode][, config][, silent]) -> str
+def misspell_string(s, mode=0, config=_DEF_CONFIG, silent=False,
+    rules_in=None):
+    """misspell_string(s[, mode][, config][, silent][, rules_in]) -> str
     Returns a misspelled version of a given string.
     
     Positional arguments:
@@ -628,6 +681,10 @@ def misspell_string(s, mode=0, config=_DEF_CONFIG, silent=False):
     [config="settings.ini"] (str) -- config file name to control parameters
         (defaults to standard config file, or None to skip the file loading)
     [silent=False] (bool) -- whether to print progress messages to the screen
+    [rules_in=None] (configparser.ConfigParser) -- config parser of letter
+        group and forbidden substring dictionaries for phonological misspelling
+        rules, normally expected to be passed by misspell_file; file loaded by
+        this function if None
     
     Returns:
     (str) -- misspelled version of string
@@ -642,10 +699,18 @@ def misspell_string(s, mode=0, config=_DEF_CONFIG, silent=False):
         sys.exit("input must be a string")
     if type(config) != str and config != None:
         sys.exit("config file name must be a string or None")
+    if (type(rules_in) != type(configparser.ConfigParser())
+        and rules_in != None):
+        sys.exit("rules option must be a ConfigParser or None")
     
     # Set config file (does nothing if no change)
     if config != None:
         _read_config(config, silent=silent)
+    
+    # Load phonological rules dictionary if not already defined
+    rules = rules_in
+    if rules == None and mode in {0, 1}:
+        rules = _read_rules(silent=silent)
     
     # Translate line-by-line and word-by-word
     out_text = "" # complete output string
@@ -654,7 +719,7 @@ def misspell_string(s, mode=0, config=_DEF_CONFIG, silent=False):
         line_part = re.split(r'(\s+)', line) # word and whitespace clusters
         for word in line_part:
             # Misspell word
-            out_line += _misspell_word(word)
+            out_line += _misspell_word(word, rules=rules)
         # Apply final typographical errors
         if mode in {0, 2}:
             # Random character swaps
@@ -718,6 +783,11 @@ def misspell_file(fin, fout=None, mode=0, config=_DEF_CONFIG,
     if config != None:
         _read_config(config)
     
+    # Load phonological rules dictionary if needed
+    rules = None
+    if mode in {0, 1}:
+        rules = _read_rules(silent=silent)
+    
     # Translate file line-by-line
     try:
         with open(fin, 'r') as f:
@@ -728,7 +798,7 @@ def misspell_file(fin, fout=None, mode=0, config=_DEF_CONFIG,
             for line in f:
                 # Call string misspeller for each line
                 out_text += misspell_string(line, mode=mode, config=None,
-                                            silent=silent)
+                                            silent=silent, rules_in=rules)
     except FileNotFoundError:
         sys.exit("input file " + fin + " not found")
     

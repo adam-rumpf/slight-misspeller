@@ -78,6 +78,9 @@ _CONFIG_COMMENTS = """;
 ; Events delete_char, insert, and replace are mutually exclusive, and the sum
 ; of their probabilities must not exceed 1.0.
 ;
+; In general, typographical misspelling consists of replacing characters with
+; nearby characters on the keyboard in order to simulate mistyping.
+;
 ; delete_space -- chance to delete any given whitespace character
 ; delete_char -- chance to delete any given non-whitespace character; mutually
 ;     exclusive with insert and replace
@@ -86,12 +89,33 @@ _CONFIG_COMMENTS = """;
 ;     non-whitespace character (both equally likely); additional character
 ;     chosen as a keyboard key adjacent to the current character; mutually
 ;     exclusive with delete_char and replace
-; replace -- chance to replace any given non-whitespace character with one next
-;     to it on the keyboard; mutually exclusive with delete_char and insert
+; replace -- chance to replace any given non-whitespace character with one
+;     next to it on the keyboard; mutually exclusive with delete_char and
+;     insert
 ;
 ; [phono]
 ;
-; TBD
+; Defines parameters for phonological misspelling (conducted before
+; typographical misspelling. All fields specify probabilities between 0.0 and
+; 1.0 for each event occurring for any given character.
+;
+; Events delete_char, insert, and replace are mutually exclusive, and the sum
+; of their probabilities must not exceed 1.0.
+;
+; In general, phonological misspelling consists of replacing characters with
+; other 'valid' characters based on a rough estimate of where the character
+; falls within the word's pronunciation (e.g. vowels replace vowels,
+; consonants replace consonants). Certain letter groups may be treated as a
+; single unit (e.g. "th", "ch", "qu"), and any replacements are prohibited
+; from creating an unpronounceable substring, both of which are defined in the
+; local "data/rules.ini" file.
+;
+; delete -- chance to delete any given character or character group; mutually
+;     exclusive with insert and replace
+; insert -- chance to insert an additional valid character or character pair
+;     before or after any given character or group (both equally likely)
+; replace -- chance to replace any given character or group with another valid
+;     character or group
 ;
 ; [blacklist]
 ;
@@ -118,7 +142,9 @@ _DEF_TYPO_SWAP = 0.0075 # chance to swap consecutive characters
 _DEF_TYPO_DELETE_CHAR = 0.0075 # chance to delete any non-whitespace character
 _DEF_TYPO_INSERT = 0.001 # chance to insert a letter from an adjacent key
 _DEF_TYPO_REPLACE = 0.0025 # chance to mistype a letter as an adjacent key
-### Define phonological constants
+_DEF_PHONO_DELETE = 0.0025 # chance to delete a valid character
+_DEF_PHONO_INSERT = 0.0025 # chance to insert a valid character
+_DEF_PHONO_REPLACE = 0.005 # chance to replace a valid character
 
 # Set global parameters to default values
 _CONFIG = _DEF_CONFIG
@@ -128,7 +154,9 @@ _TYPO_SWAP = _DEF_TYPO_SWAP
 _TYPO_DELETE_CHAR = _DEF_TYPO_DELETE_CHAR
 _TYPO_INSERT = _DEF_TYPO_INSERT
 _TYPO_REPLACE = _DEF_TYPO_REPLACE
-### Define phonological parameters
+_PHONO_DELETE = _DEF_PHONO_DELETE
+_PHONO_INSERT = _DEF_PHONO_INSERT
+_PHONO_REPLACE = _DEF_PHONO_REPLACE
 
 #=============================================================================
 # Misspelling algorithms
@@ -157,12 +185,12 @@ def _misspell_word(w, mode=0, rules=None):
     """
     
     # Validate input
-    if mode not in {0, 1, 2}:
-        mode = 0
     if type(w) != str:
         return w
+    if mode not in {0, 1, 2}:
+        mode = 0
     if type(rules) != type(configparser.ConfigParser()) and rules != None:
-        return w
+        rules = None
     
     # Special typographical procedures for whitespace
     w0 = "" # post-whitespace deletion string
@@ -181,8 +209,6 @@ def _misspell_word(w, mode=0, rules=None):
         # Split string into consonant/vowel/punctuation clusters
         s = [x for x in re.split("(["+_VOWELS+"]+)|(["+_CONSONANTS+"]+)",
              w1, flags=re.IGNORECASE) if x]
-
-        ### Note: 'rules' could be either a config parser or None.
         
         ### Phonological misspelling procedure:
         ### Divide word into blocks.
@@ -191,31 +217,15 @@ def _misspell_word(w, mode=0, rules=None):
         ### the other blocks to determine which rules to apply (C beginning,
         ### C after V, V before C, V at end, V only, C in a VC word, V in a
         ### VC word)
+        ### If any of the blocks are punctuation, recursively apply rules to
+        ### the maximal (C|V) blocks.
         ###
-        ### Go through each letter in the block and decide whether to apply
-        ### any transformations. If the letter is part of a possible group,
-        ### consider grouping it alongside an adjacent letter (which could
-        ### be part of the next block, if this is the final letter in the
-        ### current block).
-        ###
-        ### Possible transformations include: deleting the letter (or pair),
-        ### replacing the letter (or pair) with another of the same type,
-        ### and inserting another letter of the same type before or after.
-        ###
-        ### Randomly generate a move of the chosen type, and check the
-        ### resulting letter block against blacklisted substrings for its
-        ### block type. If there's no problem, apply the change, and
-        ### otherwise reroll to attempt a different type of change (up to
-        ### a limit).
-        ###
-        ### During this entire process, keep track of our current place
-        ### within the current block. By default it should advance by 1
-        ### with each character, but go back 1 whenever we delete a
-        ### character or forward by 1 whenever we insert one. We could
-        ### generalize this process by simply remembering the length of the
-        ### block before and after to compare the two, and offset our
-        ### current position by 1 + new_length - old_length. The loop should
-        ### be while our current position is less than the block's length.
+        ### After figuring out how to divide the word into syllables, send to
+        ### the _misspell_syllable(block, category, rules=rules, preserve=?)
+        ### function along with a syllable type categorization.
+        ### If the gap between syllables is bridged by a letter group, we
+        ### also set a flag to preserve the last letter of one and the first
+        ### letter of the other.
         ###
         ### Finally, if the word includes enough blocks, consider
         ### transposing one VC block with another VC block.
@@ -254,8 +264,8 @@ def _misspell_word(w, mode=0, rules=None):
 
 #-----------------------------------------------------------------------------
 
-def _misspell_syllable(s):
-    """_misspell_syllable(s) -> str
+def _misspell_syllable(s, cat, rules=None, preserve=(False, False)):
+    """_misspell_syllable(s, cat[, rules][, preserve]) -> str
     Misspells a single syllable.
     
     The smallest unit of the recursive phonological misspelling scheme. The
@@ -263,6 +273,16 @@ def _misspell_syllable(s):
     
     Positional arguments:
     s (str) -- syllable to be misspelled
+    cat (str) -- categorization of the given syllable, as a section in the
+        'rules' config parser
+    
+    Keyword arguments:
+    [rules=None] (configparser.ConfigParser) -- config parser for phonological
+        misspelling rules, containing dictionaries of forbidden substrings and
+        letter groups
+    [preserve=(False, False)] (tuple(bool)) -- flags indicating whether to
+        preserve the first and last characters (2-tuple of first/last order,
+        True to preserve character and False otherwise)
     
     Returns:
     (str) -- misspelled syllable
@@ -271,12 +291,44 @@ def _misspell_syllable(s):
     # Validate input
     if type(s) != str:
         return s
+    if type(cat) != str:
+        cat = ""
+    if type(rules) != type(configparser.ConfigParser()) and rules != None:
+        rules = None
+    if (type(preserve) != tuple or len(preserve) != 2 or
+        type(preserve[0]) != bool or type(preserve[1]) != bool):
+        preserve = (False, False)
+        
+        ### _PHONO_DELETE
+        ### _PHONO_INSERT
+        ### _PHONO_REPLACE
     
-    ###
-    # Steps:
-    # Attempt to acquire capitalization
-    # Apply misspelling rules
-    # Return the transformed result
+        ### Go through each letter in the block and decide whether to apply
+        ### any transformations. If the letter is part of a possible group,
+        ### consider grouping it alongside an adjacent letter (which could
+        ### be part of the next block, if this is the final letter in the
+        ### current block).
+        ### Use the 'preserve' value to determine whether to preserve the
+        ### first or last symbol.
+        ###
+        ### Possible transformations include: deleting the letter (or pair),
+        ### replacing the letter (or pair) with another of the same type,
+        ### and inserting another letter of the same type before or after.
+        ###
+        ### Randomly generate a move of the chosen type, and check the
+        ### resulting letter block against blacklisted substrings for its
+        ### block type. If there's no problem, apply the change, and
+        ### otherwise reroll to attempt a different type of change (up to
+        ### a limit).
+        ###
+        ### During this entire process, keep track of our current place
+        ### within the current block. By default it should advance by 1
+        ### with each character, but go back 1 whenever we delete a
+        ### character or forward by 1 whenever we insert one. We could
+        ### generalize this process by simply remembering the length of the
+        ### block before and after to compare the two, and offset our
+        ### current position by 1 + new_length - old_length. The loop should
+        ### be while our current position is less than the block's length.
     
     ###
     return s
@@ -407,6 +459,7 @@ def _read_config(fin, silent=False):
     # Global parameters to be edited
     global _CONFIG, _BLACKLIST, _TYPO_DELETE_SPACE, _TYPO_DELETE_CHAR
     global _TYPO_SWAP, _TYPO_INSERT, _TYPO_REPLACE
+    global _PHONO_DELETE, _PHONO_INSERT, _PHONO_REPLACE
 
     # Generate default config if it does not exist
     if pathlib.Path(_DEF_CONFIG).exists() == False:
@@ -460,8 +513,8 @@ def _read_config(fin, silent=False):
         _TYPO_REPLACE = float(config["typo"][key])
     except KeyError:
         if silent == False:
-            print("Key '" + key + "' from 'typo' section not found in '" + fin
-                  + "'.")
+            print("Key '" + key + "' from 'typo' section not found in '" +
+                fin + "'.")
             print("Reverting to default parameters.")
         return _default_config(silent=silent)
     except ValueError:
@@ -493,6 +546,46 @@ def _read_config(fin, silent=False):
                   "not exceed 1.0.")
             print("Reverting to default parameters.")
         return _default_config(silent=silent)
+    
+    # Read phonological section
+    try:
+        key = "delete"
+        _PHONO_DELETE = float(config["phono"][key])
+        key = "insert"
+        _PHONO_INSERT = float(config["phono"][key])
+        key = "replace"
+        _PHONO_REPLACE = float(config["phono"][key])
+    except KeyError:
+        if silent == False:
+            print("Key '" + key + "' from 'phono' section not found in '" +
+                fin + "'.")
+            print("Reverting to default parameters.")
+        return _default_config(silent=silent)
+    except ValueError:
+        if silent == False:
+            print("Key '" + key + "' from 'phono' section in '" + fin +
+                  "' should be a number.")
+            print("Reverting to default parameters.")
+        return _default_config(silent=silent)
+
+    # Validate all phonological parameters as probabilities on [0.0,1.0]
+    valid = True
+    if _PHONO_DELETE < 0 or _PHONO_DELETE > 1:
+        valid = False
+    if _PHONO_INSERT < 0 or _PHONO_INSERT > 1:
+        valid = False
+    if _PHONO_REPLACE < 0 or _PHONO_REPLACE > 1:
+        valid = False
+    if _PHONO_DELETE + _PHONO_INSERT + _PHONO_REPLACE > 1:
+        valid = False
+    if valid == False:
+        if silent == False:
+            print("Invalid 'phono' parameter read in '" + fin + "'.")
+            print("All parameters should be probabilities between 0.0 and 1.0.")
+            print("The sum of 'delete', 'insert', and 'replace' should " +
+                  "not exceed 1.0.")
+            print("Reverting to default parameters.")
+        return _default_config(silent=silent)
 
     # Read blacklist (section not required)
     if "blacklist" in config.sections():
@@ -520,6 +613,7 @@ def _default_config(silent=False, comments=True):
     # Global parameters to be edited
     global _CONFIG, _BLACKLIST, _TYPO_DELETE_SPACE, _TYPO_DELETE_CHAR
     global _TYPO_SWAP, _TYPO_INSERT, _TYPO_REPLACE
+    global _PHONO_DELETE, _PHONO_INSERT, _PHONO_REPLACE
 
     if silent == False:
         print("Resetting config file to default 'settings.ini' ...")
@@ -532,6 +626,9 @@ def _default_config(silent=False, comments=True):
     _TYPO_DELETE_CHAR = _DEF_TYPO_DELETE_CHAR
     _TYPO_INSERT = _DEF_TYPO_INSERT
     _TYPO_REPLACE = _DEF_TYPO_REPLACE
+    _PHONO_DELETE = _DEF_PHONO_DELETE
+    _PHONO_INSERT = _DEF_PHONO_INSERT
+    _PHONO_REPLACE = _DEF_PHONO_REPLACE
 
     # Initialize config parser
     config = configparser.ConfigParser(allow_no_value=True)
@@ -545,9 +642,14 @@ def _default_config(silent=False, comments=True):
     dic["replace"] = _TYPO_REPLACE
     config["typo"] = dic
     del dic
-
-    ###
+    
     # Load phonological parameters
+    dic = {}
+    dic["delete"] = _PHONO_DELETE
+    dic["insert"] = _PHONO_INSERT
+    dic["replace"] = _PHONO_REPLACE
+    config["phono"] = dic
+    del dic
 
     # Load blacklist
     dic = {}

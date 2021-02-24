@@ -205,10 +205,9 @@ def _misspell_word(w, mode=0, rules=None):
     # Apply phonological rules
     w1 = w # post-phonological misspelling string
     if mode in {0, 1}:
-        
-        # Split string into consonant/vowel/punctuation clusters
-        s = [x for x in re.split("(["+_VOWELS+"]+)|(["+_CONSONANTS+"]+)",
-             w1, flags=re.IGNORECASE) if x]
+
+        # Split word into syllable blocks with categories
+        (blocks, cats) = _word_blocks(w)
         
         ### Phonological misspelling procedure:
         ### Divide word into blocks.
@@ -332,6 +331,92 @@ def _misspell_syllable(s, cat, rules=None, preserve=(False, False)):
     
     ###
     return s
+
+#-----------------------------------------------------------------------------
+
+def _word_blocks(w):
+    """_word_blocks(w) -> (list, list)
+    Divides a word into syllable blocks (with categories).
+
+    Words are divided into blocks in an attempt to roughly represent the
+    syllables of the word. This function returns a 2-tuple of lists, with the
+    first containing a partition of the word into block substrings, and the
+    second containing a corresponding list of syllable categorizations whose
+    names correspond to the sections of the phonological rule data file.
+
+    Categorizations are respresented by one of the following strings:
+    "vc" -- vowel string followed by a consonant string
+    "c_b" -- consonant string at beginning of word
+    "v_e" -- vowel string at end of word
+    "v_w" -- word made entirely of a single vowel string
+    "cv_w" -- word made entirely of a consonant string followed by a vowel
+        string
+    "n" -- non-letter characters
+
+    Positional arguments:
+    w (str) -- word to split
+
+    Returns:
+    (list, list) -- tuple of the syllable block list followed by a
+        corresponding list of categories for each syllable
+    """
+
+    # Validate input
+    if type(w) != str:
+        return w
+
+    # Split string into consonant/vowel/other clusters
+    clusters = [x for x in re.split("(["+_VOWELS+"]+)|(["+_CONSONANTS+"]+)",
+                w, flags=re.IGNORECASE) if x]
+
+    # Initialize return lists
+    blocks = []
+    cats = []
+
+    # Check for single-block words
+    if len(clusters) == 1 and clusters[0][0].lower() in _VOWELS:
+        return ([w], ["v_w"])
+    if (len(clusters) == 2 and clusters[0][0].lower() in _CONSONANTS
+        and clusters[1][0].lower() in _VOWELS):
+        return ([w], ["cv_w"])
+
+    # Read through clusters in order
+    i = -1 # current cluster index
+    pbreak = False # whether the previous cluster is a break
+    nbreak = False # whether the next cluster is a break
+    c = "" # first character of current cluster
+    while i < len(clusters) - 1:
+        # Find current letter and whether it's against a break
+        i += 1
+        if i == 0 or clusters[i-1][0].isalpha() == False:
+            pbreak = True
+        else:
+            pbreak = False
+        if i == len(clusters) - 1 or clusters[i+1][0].isalpha() == False:
+            nbreak = True
+        else:
+            nbreak = False
+        c = clusters[i][0].lower()
+        # Check for consonant at beginning
+        if c in _CONSONANTS and pbreak == True:
+            blocks.append(clusters[i])
+            cats.append("c_b")
+        # Check for vowel at end
+        elif c in _VOWELS and nbreak == True:
+            blocks.append(clusters[i])
+            cats.append("v_e")
+        # Check for vowel followed by consonant
+        elif c in _VOWELS and clusters[i+1][0].lower() in _CONSONANTS:
+            blocks.append(clusters[i] + clusters[i+1])
+            cats.append("vc")
+            i += 1
+        # If nothing else, non-letter
+        else:
+            blocks.append(clusters[i])
+            cats.append("n")
+
+    # Return lists
+    return (blocks, cats)
 
 #-----------------------------------------------------------------------------
 
@@ -924,7 +1009,8 @@ def misspell_file(fin, fout=None, mode=0, config=_DEF_CONFIG,
 # Command line usage
 #=============================================================================
 
-if __name__ == "__main__" and len(sys.argv) > 1:
+###if __name__ == "__main__" and len(sys.argv) > 1:
+if False:
 
     # Initialize argument parser and mutually exclusive group
     parser = argparse.ArgumentParser(description=_DESCRIPTION, epilog=_EPILOG,

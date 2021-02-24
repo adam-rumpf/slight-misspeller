@@ -31,7 +31,6 @@ default config file for a complete guide.
 
 import argparse
 import configparser
-import math
 import pathlib
 import random
 import re
@@ -129,8 +128,9 @@ _VOWELS = "aeiou"
 _CONSONANTS = "bcdfghjklmnpqrstvwxyz"
 _KEYBOARD = ["1234567890", "qwertyuiop", "asdfghjkl;", "zxcvbnm,./",
              "!@#$%^&*()", "QWERTYUIOP", "ASDFGHJKL:", "ZXCVBNM<>?"]
-_COS45 = math.sqrt(2)/2
+_COS45 = 0.70710678
 _BLOCKS = ("c", "v", "vc", "c_b", "v_w", "cv_w")
+_PHONO_CUTOFF = 20 # max number of phonological misspell attempts per letter
 
 # Define default global parameters
 _DEF_CONFIG = "settings.ini" # currently-loaded config file name
@@ -208,6 +208,37 @@ def _misspell_word(w, mode=0, rules=None):
 
         # Split word into syllable blocks with categories
         (blocks, cats) = _word_blocks(w)
+
+        # Process each block
+        for i in range(len(blocks)):
+            # Skip non-letter blocks
+            if cats[i] == "n":
+                continue
+            # Determine capitalization of block
+            cap = -1 # capitalization type index (-1 for unknown)
+            if blocks[i].islower() == True:
+                cap = 0 # entirely lowercase
+            elif blocks[i].isupper() == True:
+                cap = 1 # entirely uppercase
+            elif (len(blocks[i]) > 1 and blocks[i][0].isupper() == True
+                  and blocks[i][1:].islower()):
+                cap = 2 # first letter capitalized
+            # Normalize capitalization
+            blocks[i] = blocks[i].lower()
+            ### Check for groups on boundary and use to set 'preserve' flag
+            ###
+            # Transform block
+            blocks[i] = _misspell_block(blocks[i], cats[i], rules=rules)### preserve
+            # Apply capitalization
+            if cap == 0:
+                blocks[i] = blocks[i].lower()
+            elif cap == 1:
+                blocks[i] = blocks[i].upper()
+            elif cap == 2:
+                blocks[i] = blocks[i][0].upper() + blocks[i][1:].lower()
+
+        # Re-combine blocks into a word
+        w1 = "".join(blocks)
         
         ### Phonological misspelling procedure:
         ### Divide word into blocks.
@@ -263,12 +294,13 @@ def _misspell_word(w, mode=0, rules=None):
 
 #-----------------------------------------------------------------------------
 
-def _misspell_syllable(s, cat, rules=None, preserve=(False, False)):
-    """_misspell_syllable(s, cat[, rules][, preserve]) -> str
-    Misspells a single syllable.
+def _misspell_block(s, cat, rules=None, preserve=(False, False)):
+    """_misspell_block(s, cat[, rules][, preserve]) -> str
+    Misspells a single letter block.
     
     The smallest unit of the recursive phonological misspelling scheme. The
-    input is assumed here to consist entirely of a string of characters.
+    input is assumed here to consist entirely of a string of lowercase
+    characters.
     
     Positional arguments:
     s (str) -- syllable to be misspelled
@@ -297,10 +329,12 @@ def _misspell_syllable(s, cat, rules=None, preserve=(False, False)):
     if (type(preserve) != tuple or len(preserve) != 2 or
         type(preserve[0]) != bool or type(preserve[1]) != bool):
         preserve = (False, False)
+    s = s.lower()
         
         ### _PHONO_DELETE
         ### _PHONO_INSERT
         ### _PHONO_REPLACE
+        ### _PHONO_CUTOFF
     
         ### Go through each letter in the block and decide whether to apply
         ### any transformations. If the letter is part of a possible group,
@@ -345,13 +379,14 @@ def _word_blocks(w):
     names correspond to the sections of the phonological rule data file.
 
     Categorizations are respresented by one of the following strings:
+    "c" -- consonant string
+    "v" -- vowel string
     "vc" -- vowel string followed by a consonant string
     "c_b" -- consonant string at beginning of word
-    "v_e" -- vowel string at end of word
     "v_w" -- word made entirely of a single vowel string
     "cv_w" -- word made entirely of a consonant string followed by a vowel
         string
-    "n" -- non-letter characters
+    "n" -- non-letter string
 
     Positional arguments:
     w (str) -- word to split
@@ -397,20 +432,28 @@ def _word_blocks(w):
         else:
             nbreak = False
         c = clusters[i][0].lower()
-        # Check for consonant at beginning
-        if c in _CONSONANTS and pbreak == True:
-            blocks.append(clusters[i])
-            cats.append("c_b")
-        # Check for vowel at end
-        elif c in _VOWELS and nbreak == True:
-            blocks.append(clusters[i])
-            cats.append("v_e")
-        # Check for vowel followed by consonant
-        elif c in _VOWELS and clusters[i+1][0].lower() in _CONSONANTS:
-            blocks.append(clusters[i] + clusters[i+1])
-            cats.append("vc")
-            i += 1
-        # If nothing else, non-letter
+        # Consonant
+        if c in _CONSONANTS:
+            # Consonant at beginning
+            if pbreak == True:
+                blocks.append(clusters[i])
+                cats.append("c_b")
+            # Other consonant
+            else:
+                blocks.append(clusters[i])
+                cats.append("c")
+        # Vowel
+        elif c in _VOWELS:
+            # Vowel followed by consonant
+            if nbreak == False and clusters[i+1][0].lower() in _CONSONANTS:
+                blocks.append(clusters[i] + clusters[i+1])
+                cats.append("vc")
+                i += 1
+            # Other vowel
+            else:
+                blocks.append(clusters[i])
+                cats.append("v")
+        # Non-letter
         else:
             blocks.append(clusters[i])
             cats.append("n")
@@ -1008,6 +1051,9 @@ def misspell_file(fin, fout=None, mode=0, config=_DEF_CONFIG,
 #=============================================================================
 # Command line usage
 #=============================================================================
+
+print(misspell_string("Aquatic...", mode=1))
+print(misspell_string("Three", mode=1))
 
 ###if __name__ == "__main__" and len(sys.argv) > 1:
 if False:

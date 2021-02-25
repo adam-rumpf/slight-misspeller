@@ -31,8 +31,7 @@ default config file for a complete guide.
 
 import argparse
 import configparser
-import math
-import os.path
+import pathlib
 import random
 import re
 import sys
@@ -42,7 +41,7 @@ import sys
 #=============================================================================
 
 # Define docstrings
-_VERSION = """Slight Misspeller v0.3.1-beta
+_VERSION = """Slight Misspeller v0.4.0-beta
 Copyright (c) 2021 Adam Rumpf <adam-rumpf.github.io>
 Released under MIT License <github.com/adam-rumpf/slight-misspeller>
 """
@@ -78,6 +77,9 @@ _CONFIG_COMMENTS = """;
 ; Events delete_char, insert, and replace are mutually exclusive, and the sum
 ; of their probabilities must not exceed 1.0.
 ;
+; In general, typographical misspelling consists of replacing characters with
+; nearby characters on the keyboard in order to simulate mistyping.
+;
 ; delete_space -- chance to delete any given whitespace character
 ; delete_char -- chance to delete any given non-whitespace character; mutually
 ;     exclusive with insert and replace
@@ -86,17 +88,40 @@ _CONFIG_COMMENTS = """;
 ;     non-whitespace character (both equally likely); additional character
 ;     chosen as a keyboard key adjacent to the current character; mutually
 ;     exclusive with delete_char and replace
-; replace -- chance to replace any given non-whitespace character with one next
-;     to it on the keyboard; mutually exclusive with delete_char and insert
+; replace -- chance to replace any given non-whitespace character with one
+;     next to it on the keyboard; mutually exclusive with delete_char and
+;     insert
 ;
 ; [phono]
 ;
-; TBD
+; Defines parameters for phonological misspelling (conducted before
+; typographical misspelling. All fields specify probabilities between 0.0 and
+; 1.0 for each event occurring for any given character.
+;
+; Events delete_char, insert, and replace are mutually exclusive, and the sum
+; of their probabilities must not exceed 1.0.
+;
+; In general, phonological misspelling consists of replacing characters with
+; other 'valid' characters based on a rough estimate of where the character
+; falls within the word's pronunciation (e.g. vowels replace vowels,
+; consonants replace consonants). Certain letter groups may be treated as a
+; single unit (e.g. "th", "ch", "qu"), and any replacements are prohibited
+; from creating an unpronounceable substring, both of which are defined in the
+; local "data/rules.ini" file.
+;
+; delete -- chance to delete any given character or character group; mutually
+;     exclusive with insert and replace
+; insert -- chance to insert an additional valid character or character pair
+;     before or after any given character or group (both equally likely)
+; replace -- chance to replace any given character or group with another valid
+;     character or group
+; group -- chance to treat a pair of characters as a group, if they are one of
+;     the defined character groups in the data file
 ;
 ; [blacklist]
 ;
 ; Case-insensitive list of blacklisted words, each on a separate line.
-; Blacklisted words are removed from the final output file after all
+; Blacklisted words are removed from the final output string after all
 ; misspelling procedures have completed.
 """
 
@@ -105,17 +130,24 @@ _VOWELS = "aeiou"
 _CONSONANTS = "bcdfghjklmnpqrstvwxyz"
 _KEYBOARD = ["1234567890", "qwertyuiop", "asdfghjkl;", "zxcvbnm,./",
              "!@#$%^&*()", "QWERTYUIOP", "ASDFGHJKL:", "ZXCVBNM<>?"]
-_COS45 = math.sqrt(2)/2
-### Also include any sets needed to define phonological misspelling rules.
+_COS45 = 0.70710678
+_BLOCKS = ("c", "v", "vc", "c_b", "v_w", "cv_w")
+_PHONO_CUTOFF = 20 # max number of phonological misspell attempts per letter
 
 # Define default global parameters
 _DEF_CONFIG = "settings.ini" # currently-loaded config file name
+_DEF_DATA = "data" # data file directory
+_DEF_RULES = "rules.ini" # phonological rule file name
 _DEF_BLACKLIST = () # words to prevent the program from accidentally creating
 _DEF_TYPO_DELETE_SPACE = 0.005 # chance to delete any whitespace character
 _DEF_TYPO_SWAP = 0.0075 # chance to swap consecutive characters
 _DEF_TYPO_DELETE_CHAR = 0.0075 # chance to delete any non-whitespace character
 _DEF_TYPO_INSERT = 0.001 # chance to insert a letter from an adjacent key
 _DEF_TYPO_REPLACE = 0.0025 # chance to mistype a letter as an adjacent key
+_DEF_PHONO_DELETE = 0.004 # chance to delete a valid character
+_DEF_PHONO_INSERT = 0.004 # chance to insert a valid character
+_DEF_PHONO_REPLACE = 0.007 # chance to replace a valid character
+_DEF_PHONO_GROUP = 0.75 # chance to group potentially-groupable characters
 
 # Set global parameters to default values
 _CONFIG = _DEF_CONFIG
@@ -125,17 +157,21 @@ _TYPO_SWAP = _DEF_TYPO_SWAP
 _TYPO_DELETE_CHAR = _DEF_TYPO_DELETE_CHAR
 _TYPO_INSERT = _DEF_TYPO_INSERT
 _TYPO_REPLACE = _DEF_TYPO_REPLACE
+_PHONO_DELETE = _DEF_PHONO_DELETE
+_PHONO_INSERT = _DEF_PHONO_INSERT
+_PHONO_REPLACE = _DEF_PHONO_REPLACE
+_PHONO_GROUP = _DEF_PHONO_GROUP
 
-### Other parameters:
-### Phonological: onset replacement, nucleus replacement, coda replacement,
-### transpositions
+# Set global character sets to default values
+_VOWEL_SET = tuple(_VOWELS)
+_CONSONANT_SET = tuple(_CONSONANTS)
 
 #=============================================================================
 # Misspelling algorithms
 #=============================================================================
 
-def _misspell_word(w, mode=0):
-    """_misspell_word(w[, mode]) -> str
+def _misspell_word(w, mode=0, rules=None):
+    """_misspell_word(w[, mode][, rules]) -> str
     Misspells a single word string.
     
     This function is called repeatedly by the main driver to misspell each
@@ -148,21 +184,27 @@ def _misspell_word(w, mode=0):
     Keyword arguments:
     [mode=0] (int) -- code for misspelling rules to apply (default 0 for all,
         1 for phonological only, 2 for typographical only)
+    [rules=None] (configparser.ConfigParser) -- config parser for phonological
+        misspelling rules, containing dictionaries of forbidden substrings and
+        letter groups
     
     Returns:
     (str) -- misspelled version of word
     """
     
     # Validate input
-    if mode not in {0, 1, 2}:
-        mode = 0
     if type(w) != str:
         return w
+    if mode not in {0, 1, 2}:
+        mode = 0
+    if type(rules) != type(configparser.ConfigParser()) and rules != None:
+        rules = None
     
     # Special typographical procedures for whitespace
-    w0 = "" # post-whitespace deletion string
+    w0 = w # post-whitespace deletion string
     if w.isspace() == True:
         if mode in {0, 2}:
+            w0 = ""
             # Chance to randomly delete whitespace characters
             for c in w:
                 if random.random() < 1.0 - _TYPO_DELETE_SPACE:
@@ -170,20 +212,73 @@ def _misspell_word(w, mode=0):
         return w0
     
     # Apply phonological rules
-    w1 = w # post-phonological misspelling string
+    w1 = "" # post-phonological misspelling string
     if mode in {0, 1}:
-        
-        # Split string into consonant/vowel/punctuation clusters
-        s = [x for x in re.split("(["+_VOWELS+"]+)|(["+_CONSONANTS+"]+)",
-             w1, flags=re.IGNORECASE) if x]
-        
-        ### Apply phonological misspelling to each cluster.
+
+        # Split word into syllable blocks with categories
+        (blocks, cats) = _word_blocks(w)
+
+        # Process each block
+        prev_group = False # whether a letter group spans to the previous block
+        for i in range(len(blocks)):
+            # Skip non-letter blocks
+            if cats[i] == "n":
+                continue
+            # Determine capitalization of block
+            cap = -1 # capitalization type index (-1 for unknown)
+            if blocks[i].islower() == True:
+                cap = 0 # entirely lowercase
+            elif len(blocks[i]) > 1 and blocks[i].isupper() == True:
+                cap = 1 # entirely uppercase
+            elif len(blocks[i]) == 1 and blocks[i][0].isupper() == True:
+                # Single-letter capitalized block
+                if i < len(blocks) - 1 and blocks[i+1][0].islower() == True:
+                    cap = 2
+                else:
+                    cap = 1
+            elif (len(blocks[i]) > 1 and blocks[i][0].isupper() == True
+                  and blocks[i][1:].islower() == True):
+                cap = 2 # first letter capitalized
+            # Normalize capitalization
+            blocks[i] = blocks[i].lower()
+            # Check for letter groups on the boundary between blocks
+            fst = False # whether to preserve the first character
+            lst = False # whether to preserve the last character
+            if len(blocks) > 1:
+                if (i < len(blocks) - 1 and (blocks[i][-1] + blocks[i+1][0])
+                    in rules["group"]):
+                    # Randomly decide whether to pair the characters
+                    if random.random() < _PHONO_GROUP:
+                        prev_group = True
+                        lst = True
+                    else:
+                        prev_group = False
+                else:
+                    if prev_group == True:
+                        fst = True
+                    prev_group = False
+            # Transform block
+            blocks[i] = _misspell_block(blocks[i], cats[i], rules=rules,
+                                        preserve=(fst, lst))
+            # Apply capitalization
+            if cap == 0:
+                blocks[i] = blocks[i].lower()
+            elif cap == 1:
+                blocks[i] = blocks[i].upper()
+            elif cap == 2:
+                if len(blocks[i]) > 1:
+                    blocks[i] = blocks[i][0].upper() + blocks[i][1:].lower()
+                else:
+                    blocks[i] = blocks[i].upper()
+
+        # Re-combine blocks into a word
+        w1 = "".join(blocks)
     
     # Apply typographical rules
-    w2 = "" # post-typographical misspelling string
     if mode in {0, 2}:
         
         # Chance to randomly delete, insert, or mistype a character
+        w2 = "" # post-typographical misspelling string
         for c in w1:
             # Select a random type of mistake (or none)
             rand = random.random()
@@ -202,20 +297,35 @@ def _misspell_word(w, mode=0):
             else:
                 # If no error, include unedited character
                 w2 += c
+        
+        # Return final result
+        return w2
     
-    return w2
+    # Otherwise simply return phonological result
+    return w1
 
 #-----------------------------------------------------------------------------
 
-def _misspell_syllable(s):
-    """_misspell_syllable(s) -> str
-    Misspells a single syllable.
+def _misspell_block(s, cat, rules=None, preserve=(False, False)):
+    """_misspell_block(s, cat[, rules][, preserve]) -> str
+    Misspells a single letter block.
     
     The smallest unit of the recursive phonological misspelling scheme. The
-    input is assumed here to consist entirely of a string of characters.
+    input is assumed here to consist entirely of a string of lowercase
+    characters.
     
     Positional arguments:
     s (str) -- syllable to be misspelled
+    cat (str) -- categorization of the given syllable, as a section in the
+        'rules' config parser
+    
+    Keyword arguments:
+    [rules=None] (configparser.ConfigParser) -- config parser for phonological
+        misspelling rules, containing dictionaries of forbidden substrings and
+        letter groups
+    [preserve=(False, False)] (tuple(bool)) -- flags indicating whether to
+        preserve the first and last characters (2-tuple of first/last order,
+        True to preserve character and False otherwise)
     
     Returns:
     (str) -- misspelled syllable
@@ -224,15 +334,252 @@ def _misspell_syllable(s):
     # Validate input
     if type(s) != str:
         return s
+    if type(cat) != str:
+        cat = ""
+    if type(rules) != type(configparser.ConfigParser()) and rules != None:
+        rules = None
+    if (type(preserve) != tuple or len(preserve) != 2 or
+        type(preserve[0]) != bool or type(preserve[1]) != bool):
+        preserve = (False, False)
+    s = s.lower()
+
+    # Go through each character
+    i = -1 # current character index
+    valid = False # whether a valid replacement was made
+    while i < len(s) - 1:
+        i += 1
+
+        # Skip if preserving
+        if preserve[0] == True and i < 1:
+            continue
+        if preserve[1] == True and i >= len(s) - 1:
+            continue
+
+        # Get current character (or group)
+        c = s[i]
+
+        # Determine whether to group characters
+        if len(s) > 1:
+            if i < len(s) - 1 and s[i:i+2] in rules["group"]:
+                # Randomly decide whether to pair the characters
+                if random.random() < _PHONO_GROUP:
+                    c = s[i:i+2]
+                    i += 1
+
+        # Attempt a valid transformation up to a cutoff limit
+        tries = 0
+        while tries < _PHONO_CUTOFF:
+            tries += 1
+            sn = s # new version of string
+            di = 0 # index offset from proposed change
+
+            # Chance to randomly delete, insert, or replace a character
+            rand = random.random()
+            if rand < _PHONO_DELETE and len(s) > 1:
+                # Delete character
+                sn = sn[:max(0,i-len(c)+1)] + sn[i+1:]
+                di = 1 - len(c)
+            elif rand < _PHONO_DELETE + _PHONO_INSERT:
+                # Pick a random character to insert on left or right
+                nc = "" # new character
+                # Randomly select left or right
+                if random.random() < 0.5:
+                    # Pick character to match left side
+                    if c[0] in _CONSONANTS:
+                        nc = random.choice(_CONSONANT_SET)
+                    else:
+                        nc = random.choice(_VOWEL_SET)
+                    # Insert character on left
+                    sn = sn[:max(0,i-len(c)+1)] + nc + sn[i-len(c)+1:]
+                else:
+                    # Pick character to match right side
+                    if c[-1] in _CONSONANTS:
+                        nc = random.choice(_CONSONANT_SET)
+                    else:
+                        nc = random.choice(_VOWEL_SET)
+                    # Insert character on right
+                    sn = sn[:i+1] + nc + sn[i+1:]
+                di = len(nc)
+            elif rand < _PHONO_DELETE + _PHONO_INSERT + _PHONO_REPLACE:
+                # Pick a random replacement character
+                nc = "" # new character
+                if c[0] in _CONSONANTS:
+                    nc = random.choice(_CONSONANT_SET)
+                else:
+                    nc = random.choice(_VOWEL_SET)
+                # Replace character
+                sn = sn[:max(0,i-len(c)+1)] + nc + sn[i+1:]
+                di = len(nc) - len(c)
+            else:
+                # Otherwise do nothing
+                break
+
+            # Verify that substring is valid
+            valid = True
+            if "c" in cat:
+                # Verify all consonant rules
+                for r in rules["c"]:
+                    if r in sn:
+                        valid = False
+                        break
+                if valid == False:
+                    continue
+                # Consonant at beginning
+                if cat == "c_b":
+                    for r in rules["c_b"]:
+                        if r in sn:
+                            valid = False
+                            break
+                    if valid == False:
+                        continue
+            if "v" in cat:
+                # Verify all vowel rules
+                for r in rules["v"]:
+                    if r in sn:
+                        valid = False
+                        break
+                if valid == False:
+                    continue
+                # Vowel word
+                if cat == "v_w":
+                    for r in rules["v_w"]:
+                        if r in sn:
+                            valid = False
+                            break
+                    if valid == False:
+                        continue
+                # Don't allow all vowels to be removed
+                no_vowels = True
+                for v in sn:
+                    if v in _VOWELS:
+                        no_vowels = False
+                        break
+                if no_vowels == True:
+                    valid = False
+                    continue
+            if cat == "vc":
+                # Verify VC block rules
+                for r in rules["vc"]:
+                    if r in sn:
+                        valid = False
+                        break
+                if valid == False:
+                    continue
+            elif cat == "cv_w":
+                # Verify CV word rules
+                for r in rules["cv_w"]:
+                    if r in sn:
+                        valid = False
+                        break
+                if valid == False:
+                    continue
+
+            # If all tests are passed, the substring is valid
+            valid = True
+            break
+
+        # Replace string and offset index
+        if valid == True:
+            s = sn
+            i += di
     
-    ###
-    # Steps:
-    # Attempt to acquire capitalization
-    # Apply misspelling rules
-    # Return the transformed result
-    
-    ###
+    # Return final syllable
     return s
+
+#-----------------------------------------------------------------------------
+
+def _word_blocks(w):
+    """_word_blocks(w) -> (list, list)
+    Divides a word into syllable blocks (with categories).
+
+    Words are divided into blocks in an attempt to roughly represent the
+    syllables of the word. This function returns a 2-tuple of lists, with the
+    first containing a partition of the word into block substrings, and the
+    second containing a corresponding list of syllable categorizations whose
+    names correspond to the sections of the phonological rule data file.
+
+    Categorizations are respresented by one of the following strings:
+    "c" -- consonant string
+    "v" -- vowel string
+    "vc" -- vowel string followed by a consonant string
+    "c_b" -- consonant string at beginning of word
+    "v_w" -- word made entirely of a single vowel string
+    "cv_w" -- word made entirely of a consonant string followed by a vowel
+        string
+    "n" -- non-letter string
+
+    Positional arguments:
+    w (str) -- word to split
+
+    Returns:
+    (list, list) -- tuple of the syllable block list followed by a
+        corresponding list of categories for each syllable
+    """
+
+    # Validate input
+    if type(w) != str:
+        return w
+
+    # Split string into consonant/vowel/other clusters
+    clusters = [x for x in re.split("(["+_VOWELS+"]+)|(["+_CONSONANTS+"]+)",
+                w, flags=re.IGNORECASE) if x]
+
+    # Initialize return lists
+    blocks = []
+    cats = []
+
+    # Check for single-block words
+    if len(clusters) == 1 and clusters[0][0].lower() in _VOWELS:
+        return ([w], ["v_w"])
+    if (len(clusters) == 2 and clusters[0][0].lower() in _CONSONANTS
+        and clusters[1][0].lower() in _VOWELS):
+        return ([w], ["cv_w"])
+
+    # Read through clusters in order
+    i = -1 # current cluster index
+    pbreak = False # whether the previous cluster is a break
+    nbreak = False # whether the next cluster is a break
+    c = "" # first character of current cluster
+    while i < len(clusters) - 1:
+        # Find current letter and whether it's against a break
+        i += 1
+        if i == 0 or clusters[i-1][0].isalpha() == False:
+            pbreak = True
+        else:
+            pbreak = False
+        if i == len(clusters) - 1 or clusters[i+1][0].isalpha() == False:
+            nbreak = True
+        else:
+            nbreak = False
+        c = clusters[i][0].lower()
+        # Consonant
+        if c in _CONSONANTS:
+            # Consonant at beginning
+            if pbreak == True:
+                blocks.append(clusters[i])
+                cats.append("c_b")
+            # Other consonant
+            else:
+                blocks.append(clusters[i])
+                cats.append("c")
+        # Vowel
+        elif c in _VOWELS:
+            # Vowel followed by consonant
+            if nbreak == False and clusters[i+1][0].lower() in _CONSONANTS:
+                blocks.append(clusters[i] + clusters[i+1])
+                cats.append("vc")
+                i += 1
+            # Other vowel
+            else:
+                blocks.append(clusters[i])
+                cats.append("v")
+        # Non-letter
+        else:
+            blocks.append(clusters[i])
+            cats.append("n")
+
+    # Return lists
+    return (blocks, cats)
 
 #-----------------------------------------------------------------------------
 
@@ -339,7 +686,7 @@ def _mistype_key(c):
     return _dictionary_sample(choices)
 
 #=============================================================================
-# Config file functions
+# Resource file functions
 #=============================================================================
 
 def _read_config(fin, silent=False):
@@ -360,9 +707,10 @@ def _read_config(fin, silent=False):
     # Global parameters to be edited
     global _CONFIG, _BLACKLIST, _TYPO_DELETE_SPACE, _TYPO_DELETE_CHAR
     global _TYPO_SWAP, _TYPO_INSERT, _TYPO_REPLACE
+    global _PHONO_DELETE, _PHONO_INSERT, _PHONO_REPLACE, _PHONO_GROUP
 
     # Generate default config if it does not exist
-    if os.path.exists(_DEF_CONFIG) == False:
+    if pathlib.Path(_DEF_CONFIG).exists() == False:
         _default_config(silent=silent)
     
     # Validate input
@@ -390,7 +738,7 @@ def _read_config(fin, silent=False):
     config = configparser.ConfigParser(allow_no_value=True)
 
     # Verify that config file exists
-    if os.path.exists(fin) == False:
+    if pathlib.Path(fin).exists() == False:
         if silent == False:
             print("Config file '" + fin + "' not found.")
             print("Reverting to default parameters.")
@@ -413,8 +761,8 @@ def _read_config(fin, silent=False):
         _TYPO_REPLACE = float(config["typo"][key])
     except KeyError:
         if silent == False:
-            print("Key '" + key + "' from 'typo' section not found in '" + fin
-                  + "'.")
+            print("Key '" + key + "' from 'typo' section not found in '" +
+                fin + "'.")
             print("Reverting to default parameters.")
         return _default_config(silent=silent)
     except ValueError:
@@ -441,8 +789,54 @@ def _read_config(fin, silent=False):
     if valid == False:
         if silent == False:
             print("Invalid 'typo' parameter read in '" + fin + "'.")
-            print("All parameters should be probabilities between 0.0 and 1.0.")
+            print("All parameters should be probabilities between 0.0 and " +
+                  "1.0.")
             print("The sum of 'delete_char', 'insert', and 'replace' should " +
+                  "not exceed 1.0.")
+            print("Reverting to default parameters.")
+        return _default_config(silent=silent)
+    
+    # Read phonological section
+    try:
+        key = "delete"
+        _PHONO_DELETE = float(config["phono"][key])
+        key = "insert"
+        _PHONO_INSERT = float(config["phono"][key])
+        key = "replace"
+        _PHONO_REPLACE = float(config["phono"][key])
+        key = "group"
+        _PHONO_GROUP = float(config["phono"][key])
+    except KeyError:
+        if silent == False:
+            print("Key '" + key + "' from 'phono' section not found in '" +
+                fin + "'.")
+            print("Reverting to default parameters.")
+        return _default_config(silent=silent)
+    except ValueError:
+        if silent == False:
+            print("Key '" + key + "' from 'phono' section in '" + fin +
+                  "' should be a number.")
+            print("Reverting to default parameters.")
+        return _default_config(silent=silent)
+
+    # Validate all phonological parameters as probabilities on [0.0,1.0]
+    valid = True
+    if _PHONO_DELETE < 0 or _PHONO_DELETE > 1:
+        valid = False
+    if _PHONO_INSERT < 0 or _PHONO_INSERT > 1:
+        valid = False
+    if _PHONO_REPLACE < 0 or _PHONO_REPLACE > 1:
+        valid = False
+    if _PHONO_GROUP < 0 or _PHONO_GROUP > 1:
+        valid = False
+    if _PHONO_DELETE + _PHONO_INSERT + _PHONO_REPLACE > 1:
+        valid = False
+    if valid == False:
+        if silent == False:
+            print("Invalid 'phono' parameter read in '" + fin + "'.")
+            print("All parameters should be probabilities between 0.0 and " +
+                  "1.0.")
+            print("The sum of 'delete', 'insert', and 'replace' should " +
                   "not exceed 1.0.")
             print("Reverting to default parameters.")
         return _default_config(silent=silent)
@@ -473,6 +867,7 @@ def _default_config(silent=False, comments=True):
     # Global parameters to be edited
     global _CONFIG, _BLACKLIST, _TYPO_DELETE_SPACE, _TYPO_DELETE_CHAR
     global _TYPO_SWAP, _TYPO_INSERT, _TYPO_REPLACE
+    global _PHONO_DELETE, _PHONO_INSERT, _PHONO_REPLACE, _PHONO_GROUP
 
     if silent == False:
         print("Resetting config file to default 'settings.ini' ...")
@@ -485,6 +880,10 @@ def _default_config(silent=False, comments=True):
     _TYPO_DELETE_CHAR = _DEF_TYPO_DELETE_CHAR
     _TYPO_INSERT = _DEF_TYPO_INSERT
     _TYPO_REPLACE = _DEF_TYPO_REPLACE
+    _PHONO_DELETE = _DEF_PHONO_DELETE
+    _PHONO_INSERT = _DEF_PHONO_INSERT
+    _PHONO_REPLACE = _DEF_PHONO_REPLACE
+    _PHONO_GROUP = _DEF_PHONO_GROUP
 
     # Initialize config parser
     config = configparser.ConfigParser(allow_no_value=True)
@@ -498,9 +897,15 @@ def _default_config(silent=False, comments=True):
     dic["replace"] = _TYPO_REPLACE
     config["typo"] = dic
     del dic
-
-    ###
+    
     # Load phonological parameters
+    dic = {}
+    dic["delete"] = _PHONO_DELETE
+    dic["insert"] = _PHONO_INSERT
+    dic["replace"] = _PHONO_REPLACE
+    dic["group"] = _PHONO_GROUP
+    config["phono"] = dic
+    del dic
 
     # Load blacklist
     dic = {}
@@ -533,6 +938,78 @@ def _default_config(silent=False, comments=True):
 
     if silent == False:
         print("Config file successfully reset!")
+
+#-----------------------------------------------------------------------------
+
+def _read_rules(silent=False):
+    """_read_rules() -> configparser.ConfigParser
+    Reads the rules resource INI file for phonological misspelling rules.
+
+    Keyword arguments:
+    [silent=False] (bool) -- whether to print progress messages to the screen
+    
+    Returns:
+    (configparser.ConfigParser) -- parser object of phonological misspelling
+        rules, including forbidden substrings within different word blocks and
+        letter groups
+    """
+
+    # Global parameters to be edited
+    global _VOWEL_SET, _CONSONANT_SET
+
+    if silent == False:
+        print("Reading phonological rule data ...")
+
+    # Define file path to data file
+    fin = pathlib.PurePath(__file__).parent / _DEF_DATA / _DEF_RULES
+
+    # Initialize data file parser
+    config = configparser.ConfigParser(allow_no_value=True)
+
+    # Verify that config file exists
+    if pathlib.Path(fin).exists() == False:
+        # If not, return an empty parser
+        if silent == False:
+            print("Rule data not found. Ignoring phonological rules.")
+        config["group"] = {}
+        for b in _BLOCKS:
+            config[b] = {}
+        return config
+
+    # Read data file
+    config.read(fin)
+
+    # Verify that all needed fields are present
+    if "group" not in config:
+        config["group"] = {}
+    for b in _BLOCKS:
+        if b not in config:
+            config[b] = {}
+
+    # Create character sets
+    _VOWEL_SET = list(_VOWELS)
+    _CONSONANT_SET = list(_CONSONANTS)
+    for g in config["group"]:
+        # Determine whether group is purely vowel or consonant
+        vow = True
+        con = True
+        for c in g:
+            if c not in _VOWELS:
+                vow = False
+            if c not in _CONSONANTS:
+                con = False
+        if vow == True:
+            _VOWEL_SET.append(g)
+        if con == True:
+            _CONSONANT_SET.append(g)
+    _VOWEL_SET = tuple(_VOWEL_SET)
+    _CONSONANT_SET = tuple(_CONSONANT_SET)
+
+    if silent == False:
+        print("Phonological rules loaded!")
+    
+    # Return the parser
+    return config
 
 #=============================================================================
 # General utility functions
@@ -577,8 +1054,9 @@ def _dictionary_sample(dic):
 # Public functions
 #=============================================================================
 
-def misspell_string(s, mode=0, config=_DEF_CONFIG, silent=False):
-    """misspell_string(s[, mode][, config][, silent]) -> str
+def misspell_string(s, mode=0, config=_DEF_CONFIG, silent=False,
+    rules_in=None):
+    """misspell_string(s[, mode][, config][, silent][, rules_in]) -> str
     Returns a misspelled version of a given string.
     
     Positional arguments:
@@ -590,6 +1068,10 @@ def misspell_string(s, mode=0, config=_DEF_CONFIG, silent=False):
     [config="settings.ini"] (str) -- config file name to control parameters
         (defaults to standard config file, or None to skip the file loading)
     [silent=False] (bool) -- whether to print progress messages to the screen
+    [rules_in=None] (configparser.ConfigParser) -- config parser of letter
+        group and forbidden substring dictionaries for phonological misspelling
+        rules, normally expected to be passed by misspell_file; file loaded by
+        this function if None
     
     Returns:
     (str) -- misspelled version of string
@@ -604,10 +1086,18 @@ def misspell_string(s, mode=0, config=_DEF_CONFIG, silent=False):
         sys.exit("input must be a string")
     if type(config) != str and config != None:
         sys.exit("config file name must be a string or None")
+    if (type(rules_in) != type(configparser.ConfigParser())
+        and rules_in != None):
+        sys.exit("rules option must be a ConfigParser or None")
     
     # Set config file (does nothing if no change)
     if config != None:
         _read_config(config, silent=silent)
+    
+    # Load phonological rules dictionary if not already defined
+    rules = rules_in
+    if rules == None and mode in {0, 1}:
+        rules = _read_rules(silent=silent)
     
     # Translate line-by-line and word-by-word
     out_text = "" # complete output string
@@ -616,7 +1106,7 @@ def misspell_string(s, mode=0, config=_DEF_CONFIG, silent=False):
         line_part = re.split(r'(\s+)', line) # word and whitespace clusters
         for word in line_part:
             # Misspell word
-            out_line += _misspell_word(word)
+            out_line += _misspell_word(word, mode=mode, rules=rules)
         # Apply final typographical errors
         if mode in {0, 2}:
             # Random character swaps
@@ -678,7 +1168,12 @@ def misspell_file(fin, fout=None, mode=0, config=_DEF_CONFIG,
     
     # Set config file (does nothing if no change)
     if config != None:
-        _read_config(config)
+        _read_config(config, silent=silent)
+    
+    # Load phonological rules dictionary if needed
+    rules = None
+    if mode in {0, 1}:
+        rules = _read_rules(silent=silent)
     
     # Translate file line-by-line
     try:
@@ -690,7 +1185,7 @@ def misspell_file(fin, fout=None, mode=0, config=_DEF_CONFIG,
             for line in f:
                 # Call string misspeller for each line
                 out_text += misspell_string(line, mode=mode, config=None,
-                                            silent=silent)
+                                            silent=silent, rules_in=rules)
     except FileNotFoundError:
         sys.exit("input file " + fin + " not found")
     
@@ -725,15 +1220,15 @@ if __name__ == "__main__" and len(sys.argv) > 1:
     parser.add_argument("-i", "--init-file", default=_DEF_CONFIG,
                         help="misspeller parameter config file", dest="config")
     parser.add_argument("-s", "--string", action="store_true",
-                        help=("interpret 'instring' as a raw string rather " +
-                              "than a file path"))
+                        help=("interpret 'instring' as a string to be " +
+                              "misspelled rather than a file path"))
+    parser.add_argument("-q", "--quiet", action="store_true", dest="silent",
+                        help="silence progress messages")
     group.add_argument("-p", "--phono", action="store_true",
                        help="apply only phonological misspelling rules")
     group.add_argument("-t", "--typo", action="store_true",
                        help="apply only typographical misspelling rules")
-    parser.add_argument("-q", "--quiet", action="store_true", dest="silent",
-                        help="silence progress messages")
-
+    
     # Parse command line arguments
     args = parser.parse_args()
 

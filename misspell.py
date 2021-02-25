@@ -41,7 +41,7 @@ import sys
 #=============================================================================
 
 # Define docstrings
-_VERSION = """Slight Misspeller v1.0.0
+_VERSION = """Slight Misspeller v1.0.1
 Copyright (c) 2021 Adam Rumpf <adam-rumpf.github.io>
 Released under MIT License <github.com/adam-rumpf/slight-misspeller>
 """
@@ -212,7 +212,7 @@ def _misspell_word(w, mode=0, rules=None):
         return w0
     
     # Apply phonological rules
-    w1 = "" # post-phonological misspelling string
+    w1 = w0 # post-phonological misspelling string
     if mode in {0, 1}:
 
         # Split word into syllable blocks with categories

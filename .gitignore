@@ -1,5 +1,6 @@
 text/
 *.pyc
 *.ini
+*.txt
 !rules.ini
 !settings.ini

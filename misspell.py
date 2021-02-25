@@ -41,7 +41,7 @@ import sys
 #=============================================================================
 
 # Define docstrings
-_VERSION = """Slight Misspeller v0.4.0-beta
+_VERSION = """Slight Misspeller v1.0.0
 Copyright (c) 2021 Adam Rumpf <adam-rumpf.github.io>
 Released under MIT License <github.com/adam-rumpf/slight-misspeller>
 """
@@ -498,7 +498,7 @@ def _word_blocks(w):
     second containing a corresponding list of syllable categorizations whose
     names correspond to the sections of the phonological rule data file.
 
-    Categorizations are respresented by one of the following strings:
+    Categorizations are represented by one of the following strings:
     "c" -- consonant string
     "v" -- vowel string
     "vc" -- vowel string followed by a consonant string
@@ -1055,8 +1055,8 @@ def _dictionary_sample(dic):
 #=============================================================================
 
 def misspell_string(s, mode=0, config=_DEF_CONFIG, silent=False,
-    rules_in=None):
-    """misspell_string(s[, mode][, config][, silent][, rules_in]) -> str
+    _rules=None):
+    """misspell_string(s[, mode][, config][, silent]) -> str
     Returns a misspelled version of a given string.
     
     Positional arguments:
@@ -1068,8 +1068,8 @@ def misspell_string(s, mode=0, config=_DEF_CONFIG, silent=False,
     [config="settings.ini"] (str) -- config file name to control parameters
         (defaults to standard config file, or None to skip the file loading)
     [silent=False] (bool) -- whether to print progress messages to the screen
-    [rules_in=None] (configparser.ConfigParser) -- config parser of letter
-        group and forbidden substring dictionaries for phonological misspelling
+    [_rules=None] (configparser.ConfigParser) -- config parser of letter group
+        and forbidden substring dictionaries for phonological misspelling
         rules, normally expected to be passed by misspell_file; file loaded by
         this function if None
     
@@ -1086,8 +1086,8 @@ def misspell_string(s, mode=0, config=_DEF_CONFIG, silent=False,
         sys.exit("input must be a string")
     if type(config) != str and config != None:
         sys.exit("config file name must be a string or None")
-    if (type(rules_in) != type(configparser.ConfigParser())
-        and rules_in != None):
+    if (type(_rules) != type(configparser.ConfigParser())
+        and _rules != None):
         sys.exit("rules option must be a ConfigParser or None")
     
     # Set config file (does nothing if no change)
@@ -1095,7 +1095,7 @@ def misspell_string(s, mode=0, config=_DEF_CONFIG, silent=False,
         _read_config(config, silent=silent)
     
     # Load phonological rules dictionary if not already defined
-    rules = rules_in
+    rules = _rules
     if rules == None and mode in {0, 1}:
         rules = _read_rules(silent=silent)
     
@@ -1185,7 +1185,7 @@ def misspell_file(fin, fout=None, mode=0, config=_DEF_CONFIG,
             for line in f:
                 # Call string misspeller for each line
                 out_text += misspell_string(line, mode=mode, config=None,
-                                            silent=silent, rules_in=rules)
+                                            silent=silent, _rules=rules)
     except FileNotFoundError:
         sys.exit("input file " + fin + " not found")
     
@@ -1213,7 +1213,7 @@ if __name__ == "__main__" and len(sys.argv) > 1:
     # Define arguments
     parser.add_argument("-v", "--version", action="version", version=_VERSION)
     parser.add_argument("instring",
-                        help="input file (or string with the --string tag)")
+                        help="input file (or string, with the --string tag)")
     parser.add_argument("outstring", nargs="?",
                         help="output file (leave empty to print result to " +
                         "screen)")

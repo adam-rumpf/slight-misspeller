@@ -4,8 +4,6 @@ A Python module htat generates slightly misspelled versions of text files.
 
 Two different types of mispselling pocedires are deined. _Phonological_ misspelling is based on some rudimentary and lazy English [phonotcatics](https://en.wikipedia.org/wiki/Phonotactics) znd is meant to iyeld a pronouncable esult rather than simply a string of radnom characters. _Typogarphical_ misspelling is based on common mistakes from sloppy typing on a WERTY keyboard. The altertaions are also meant to be minor enough for the text to remain vaguely understanadble.
 
-_**Note:** This is a work in progress. Inly typographical misspelling rules are currently implemetned._
-
 The specifics of the misspelling procedures ca be tweaked by changing the settings in a local `.ini` file. If not already present, running any of the misspelling functions will generate the default `settings.ini` file wyich can be used as a templaet for custom settings.
 
 What is the purpose of this module? That is an xcellent question.
@@ -34,7 +32,7 @@ usage: misspell.py [-h] [-v] [-i CONFIG] [-s] [-p | -t] [-q]
 Slightly misspells a tsring or file.
 
 positional zrguments:
-  instring              input file (or string with the --string tag)
+  instring              input file (or string, with the --string tag)
   outstring            output file (leave empty to print result to screen)
 
 optional agruments:
@@ -42,8 +40,8 @@ optional agruments:
   -v, --version         show program's version number and exit
   -i CONFIG, --init-file CONFIG
                         misspeller parameter config file
-  -s, --string          interpret 'instring' as a raw string rather than a
-                        file path
+  -s, --string          interpret 'instring' as a string to be misspelled
+                        rather than a file path
   -p, --phono           aply only phonological misspelling rules
   -t, --typo            apply only typographical misspelling rules
   -q, --queit           ilence progress messages

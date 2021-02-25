@@ -144,9 +144,9 @@ _DEF_TYPO_SWAP = 0.0075 # chance to swap consecutive characters
 _DEF_TYPO_DELETE_CHAR = 0.0075 # chance to delete any non-whitespace character
 _DEF_TYPO_INSERT = 0.001 # chance to insert a letter from an adjacent key
 _DEF_TYPO_REPLACE = 0.0025 # chance to mistype a letter as an adjacent key
-_DEF_PHONO_DELETE = 0.003 # chance to delete a valid character
-_DEF_PHONO_INSERT = 0.003 # chance to insert a valid character
-_DEF_PHONO_REPLACE = 0.006 # chance to replace a valid character
+_DEF_PHONO_DELETE = 0.004 # chance to delete a valid character
+_DEF_PHONO_INSERT = 0.004 # chance to insert a valid character
+_DEF_PHONO_REPLACE = 0.007 # chance to replace a valid character
 _DEF_PHONO_GROUP = 0.75 # chance to group potentially-groupable characters
 
 # Set global parameters to default values
@@ -228,10 +228,16 @@ def _misspell_word(w, mode=0, rules=None):
             cap = -1 # capitalization type index (-1 for unknown)
             if blocks[i].islower() == True:
                 cap = 0 # entirely lowercase
-            elif blocks[i].isupper() == True:
+            elif len(blocks[i]) > 1 and blocks[i].isupper() == True:
                 cap = 1 # entirely uppercase
+            elif len(blocks[i]) == 1 and blocks[i][0].isupper() == True:
+                # Single-letter capitalized block
+                if i < len(blocks) - 1 and blocks[i+1][0].islower() == True:
+                    cap = 2
+                else:
+                    cap = 1
             elif (len(blocks[i]) > 1 and blocks[i][0].isupper() == True
-                  and blocks[i][1:].islower()):
+                  and blocks[i][1:].islower() == True):
                 cap = 2 # first letter capitalized
             # Normalize capitalization
             blocks[i] = blocks[i].lower()
@@ -260,7 +266,10 @@ def _misspell_word(w, mode=0, rules=None):
             elif cap == 1:
                 blocks[i] = blocks[i].upper()
             elif cap == 2:
-                blocks[i] = blocks[i][0].upper() + blocks[i][1:].lower()
+                if len(blocks[i]) > 1:
+                    blocks[i] = blocks[i][0].upper() + blocks[i][1:].lower()
+                else:
+                    blocks[i] = blocks[i].upper()
 
         # Re-combine blocks into a word
         w1 = "".join(blocks)
@@ -406,27 +415,63 @@ def _misspell_block(s, cat, rules=None, preserve=(False, False)):
                 break
 
             # Verify that substring is valid
+            valid = True
             if "c" in cat:
                 # Verify all consonant rules
-                if s in rules["c"]:
+                for r in rules["c"]:
+                    if r in sn:
+                        valid = False
+                        break
+                if valid == False:
                     continue
                 # Consonant at beginning
-                if cat == "c_b" and s in rules["c_b"]:
-                    continue
+                if cat == "c_b":
+                    for r in rules["c_b"]:
+                        if r in sn:
+                            valid = False
+                            break
+                    if valid == False:
+                        continue
             if "v" in cat:
                 # Verify all vowel rules
-                if s in rules["v"]:
+                for r in rules["v"]:
+                    if r in sn:
+                        valid = False
+                        break
+                if valid == False:
                     continue
                 # Vowel word
-                if cat == "v_w" and s in rules["v_w"]:
+                if cat == "v_w":
+                    for r in rules["v_w"]:
+                        if r in sn:
+                            valid = False
+                            break
+                    if valid == False:
+                        continue
+                # Don't allow all vowels to be removed
+                no_vowels = True
+                for v in sn:
+                    if v in _VOWELS:
+                        no_vowels = False
+                        break
+                if no_vowels == True:
+                    valid = False
                     continue
             if cat == "vc":
                 # Verify VC block rules
-                if s in rules["vc"]:
+                for r in rules["vc"]:
+                    if r in sn:
+                        valid = False
+                        break
+                if valid == False:
                     continue
             elif cat == "cv_w":
                 # Verify CV word rules
-                if s in rules["cv_w"]:
+                for r in rules["cv_w"]:
+                    if r in sn:
+                        valid = False
+                        break
+                if valid == False:
                     continue
 
             # If all tests are passed, the substring is valid
@@ -744,7 +789,8 @@ def _read_config(fin, silent=False):
     if valid == False:
         if silent == False:
             print("Invalid 'typo' parameter read in '" + fin + "'.")
-            print("All parameters should be probabilities between 0.0 and 1.0.")
+            print("All parameters should be probabilities between 0.0 and " +
+                  "1.0.")
             print("The sum of 'delete_char', 'insert', and 'replace' should " +
                   "not exceed 1.0.")
             print("Reverting to default parameters.")
@@ -788,7 +834,8 @@ def _read_config(fin, silent=False):
     if valid == False:
         if silent == False:
             print("Invalid 'phono' parameter read in '" + fin + "'.")
-            print("All parameters should be probabilities between 0.0 and 1.0.")
+            print("All parameters should be probabilities between 0.0 and " +
+                  "1.0.")
             print("The sum of 'delete', 'insert', and 'replace' should " +
                   "not exceed 1.0.")
             print("Reverting to default parameters.")

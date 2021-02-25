@@ -144,9 +144,9 @@ _DEF_TYPO_SWAP = 0.0075 # chance to swap consecutive characters
 _DEF_TYPO_DELETE_CHAR = 0.0075 # chance to delete any non-whitespace character
 _DEF_TYPO_INSERT = 0.001 # chance to insert a letter from an adjacent key
 _DEF_TYPO_REPLACE = 0.0025 # chance to mistype a letter as an adjacent key
-_DEF_PHONO_DELETE = 0.0025 # chance to delete a valid character
-_DEF_PHONO_INSERT = 0.0025 # chance to insert a valid character
-_DEF_PHONO_REPLACE = 0.005 # chance to replace a valid character
+_DEF_PHONO_DELETE = 0.003 # chance to delete a valid character
+_DEF_PHONO_INSERT = 0.003 # chance to insert a valid character
+_DEF_PHONO_REPLACE = 0.006 # chance to replace a valid character
 _DEF_PHONO_GROUP = 0.75 # chance to group potentially-groupable characters
 
 # Set global parameters to default values
@@ -161,6 +161,10 @@ _PHONO_DELETE = _DEF_PHONO_DELETE
 _PHONO_INSERT = _DEF_PHONO_INSERT
 _PHONO_REPLACE = _DEF_PHONO_REPLACE
 _PHONO_GROUP = _DEF_PHONO_GROUP
+
+# Set global character sets to default values
+_VOWEL_SET = tuple(_VOWELS)
+_CONSONANT_SET = tuple(_CONSONANTS)
 
 #=============================================================================
 # Misspelling algorithms
@@ -197,9 +201,10 @@ def _misspell_word(w, mode=0, rules=None):
         rules = None
     
     # Special typographical procedures for whitespace
-    w0 = "" # post-whitespace deletion string
+    w0 = w # post-whitespace deletion string
     if w.isspace() == True:
         if mode in {0, 2}:
+            w0 = ""
             # Chance to randomly delete whitespace characters
             for c in w:
                 if random.random() < 1.0 - _TYPO_DELETE_SPACE:
@@ -207,7 +212,7 @@ def _misspell_word(w, mode=0, rules=None):
         return w0
     
     # Apply phonological rules
-    w1 = w # post-phonological misspelling string
+    w1 = "" # post-phonological misspelling string
     if mode in {0, 1}:
 
         # Split word into syllable blocks with categories
@@ -259,24 +264,12 @@ def _misspell_word(w, mode=0, rules=None):
 
         # Re-combine blocks into a word
         w1 = "".join(blocks)
-        
-        ### Phonological misspelling procedure:
-        ### Divide word into blocks.
-        ###
-        ### Finally, if the word includes enough blocks, consider
-        ### transposing one VC block with another VC block.
-        ###
-        ### During this process, preserve the capitalization of the block.
-        ### Keep to a single case if the entire block was a single case, and
-        ### capitalize only the beginning if only the beginning was
-        ### capitalized. If anything else, randomly choose cases for any
-        ### new letters.
     
     # Apply typographical rules
-    w2 = "" # post-typographical misspelling string
     if mode in {0, 2}:
         
         # Chance to randomly delete, insert, or mistype a character
+        w2 = "" # post-typographical misspelling string
         for c in w1:
             # Select a random type of mistake (or none)
             rand = random.random()
@@ -295,8 +288,12 @@ def _misspell_word(w, mode=0, rules=None):
             else:
                 # If no error, include unedited character
                 w2 += c
+        
+        # Return final result
+        return w2
     
-    return w2
+    # Otherwise simply return phonological result
+    return w1
 
 #-----------------------------------------------------------------------------
 
@@ -339,6 +336,7 @@ def _misspell_block(s, cat, rules=None, preserve=(False, False)):
 
     # Go through each character
     i = -1 # current character index
+    valid = False # whether a valid replacement was made
     while i < len(s) - 1:
         i += 1
 
@@ -347,41 +345,100 @@ def _misspell_block(s, cat, rules=None, preserve=(False, False)):
             continue
         if preserve[1] == True and i >= len(s) - 1:
             continue
-        
-        ### _PHONO_DELETE
-        ### _PHONO_INSERT
-        ### _PHONO_REPLACE
-        ### _PHONO_CUTOFF
-        ### _PHONO_GROUP
+
+        # Get current character (or group)
+        c = s[i]
+
+        # Determine whether to group characters
+        if len(s) > 1:
+            if i < len(s) - 1 and s[i:i+2] in rules["group"]:
+                # Randomly decide whether to pair the characters
+                if random.random() < _PHONO_GROUP:
+                    c = s[i:i+2]
+                    i += 1
+
+        # Attempt a valid transformation up to a cutoff limit
+        tries = 0
+        while tries < _PHONO_CUTOFF:
+            tries += 1
+            sn = s # new version of string
+            di = 0 # index offset from proposed change
+
+            # Chance to randomly delete, insert, or replace a character
+            rand = random.random()
+            if rand < _PHONO_DELETE and len(s) > 1:
+                # Delete character
+                sn = sn[:max(0,i-len(c)+1)] + sn[i+1:]
+                di = 1 - len(c)
+            elif rand < _PHONO_DELETE + _PHONO_INSERT:
+                # Pick a random character to insert on left or right
+                nc = "" # new character
+                # Randomly select left or right
+                if random.random() < 0.5:
+                    # Pick character to match left side
+                    if c[0] in _CONSONANTS:
+                        nc = random.choice(_CONSONANT_SET)
+                    else:
+                        nc = random.choice(_VOWEL_SET)
+                    # Insert character on left
+                    sn = sn[:max(0,i-len(c)+1)] + nc + sn[i-len(c)+1:]
+                else:
+                    # Pick character to match right side
+                    if c[-1] in _CONSONANTS:
+                        nc = random.choice(_CONSONANT_SET)
+                    else:
+                        nc = random.choice(_VOWEL_SET)
+                    # Insert character on right
+                    sn = sn[:i+1] + nc + sn[i+1:]
+                di = len(nc)
+            elif rand < _PHONO_DELETE + _PHONO_INSERT + _PHONO_REPLACE:
+                # Pick a random replacement character
+                nc = "" # new character
+                if c[0] in _CONSONANTS:
+                    nc = random.choice(_CONSONANT_SET)
+                else:
+                    nc = random.choice(_VOWEL_SET)
+                # Replace character
+                sn = sn[:max(0,i-len(c)+1)] + nc + sn[i+1:]
+                di = len(nc) - len(c)
+            else:
+                # Otherwise do nothing
+                break
+
+            # Verify that substring is valid
+            if "c" in cat:
+                # Verify all consonant rules
+                if s in rules["c"]:
+                    continue
+                # Consonant at beginning
+                if cat == "c_b" and s in rules["c_b"]:
+                    continue
+            if "v" in cat:
+                # Verify all vowel rules
+                if s in rules["v"]:
+                    continue
+                # Vowel word
+                if cat == "v_w" and s in rules["v_w"]:
+                    continue
+            if cat == "vc":
+                # Verify VC block rules
+                if s in rules["vc"]:
+                    continue
+            elif cat == "cv_w":
+                # Verify CV word rules
+                if s in rules["cv_w"]:
+                    continue
+
+            # If all tests are passed, the substring is valid
+            valid = True
+            break
+
+        # Replace string and offset index
+        if valid == True:
+            s = sn
+            i += di
     
-        ### Go through each letter in the block and decide whether to apply
-        ### any transformations. If the letter is part of a possible group,
-        ### consider grouping it alongside an adjacent letter (which could
-        ### be part of the next block, if this is the final letter in the
-        ### current block).
-        ### Use the 'preserve' value to determine whether to preserve the
-        ### first or last symbol.
-        ###
-        ### Possible transformations include: deleting the letter (or pair),
-        ### replacing the letter (or pair) with another of the same type,
-        ### and inserting another letter of the same type before or after.
-        ###
-        ### Randomly generate a move of the chosen type, and check the
-        ### resulting letter block against blacklisted substrings for its
-        ### block type. If there's no problem, apply the change, and
-        ### otherwise reroll to attempt a different type of change (up to
-        ### a limit).
-        ###
-        ### During this entire process, keep track of our current place
-        ### within the current block. By default it should advance by 1
-        ### with each character, but go back 1 whenever we delete a
-        ### character or forward by 1 whenever we insert one. We could
-        ### generalize this process by simply remembering the length of the
-        ### block before and after to compare the two, and offset our
-        ### current position by 1 + new_length - old_length. The loop should
-        ### be while our current position is less than the block's length.
-    
-    ###
+    # Return final syllable
     return s
 
 #-----------------------------------------------------------------------------
@@ -850,6 +907,9 @@ def _read_rules(silent=False):
         letter groups
     """
 
+    # Global parameters to be edited
+    global _VOWEL_SET, _CONSONANT_SET
+
     if silent == False:
         print("Reading phonological rule data ...")
 
@@ -878,6 +938,25 @@ def _read_rules(silent=False):
     for b in _BLOCKS:
         if b not in config:
             config[b] = {}
+
+    # Create character sets
+    _VOWEL_SET = list(_VOWELS)
+    _CONSONANT_SET = list(_CONSONANTS)
+    for g in config["group"]:
+        # Determine whether group is purely vowel or consonant
+        vow = True
+        con = True
+        for c in g:
+            if c not in _VOWELS:
+                vow = False
+            if c not in _CONSONANTS:
+                con = False
+        if vow == True:
+            _VOWEL_SET.append(g)
+        if con == True:
+            _CONSONANT_SET.append(g)
+    _VOWEL_SET = tuple(_VOWEL_SET)
+    _CONSONANT_SET = tuple(_CONSONANT_SET)
 
     if silent == False:
         print("Phonological rules loaded!")
@@ -980,7 +1059,7 @@ def misspell_string(s, mode=0, config=_DEF_CONFIG, silent=False,
         line_part = re.split(r'(\s+)', line) # word and whitespace clusters
         for word in line_part:
             # Misspell word
-            out_line += _misspell_word(word, rules=rules)
+            out_line += _misspell_word(word, mode=mode, rules=rules)
         # Apply final typographical errors
         if mode in {0, 2}:
             # Random character swaps
@@ -1042,7 +1121,7 @@ def misspell_file(fin, fout=None, mode=0, config=_DEF_CONFIG,
     
     # Set config file (does nothing if no change)
     if config != None:
-        _read_config(config)
+        _read_config(config, silent=silent)
     
     # Load phonological rules dictionary if needed
     rules = None
@@ -1076,11 +1155,7 @@ def misspell_file(fin, fout=None, mode=0, config=_DEF_CONFIG,
 # Command line usage
 #=============================================================================
 
-print(misspell_string("Aquatic...", mode=1))
-print(misspell_string("Three", mode=1))
-
-###if __name__ == "__main__" and len(sys.argv) > 1:
-if False:
+if __name__ == "__main__" and len(sys.argv) > 1:
 
     # Initialize argument parser and mutually exclusive group
     parser = argparse.ArgumentParser(description=_DESCRIPTION, epilog=_EPILOG,

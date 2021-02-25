@@ -115,6 +115,8 @@ _CONFIG_COMMENTS = """;
 ;     before or after any given character or group (both equally likely)
 ; replace -- chance to replace any given character or group with another valid
 ;     character or group
+; group -- chance to treat a pair of characters as a group, if they are one of
+;     the defined character groups in the data file
 ;
 ; [blacklist]
 ;
@@ -145,6 +147,7 @@ _DEF_TYPO_REPLACE = 0.0025 # chance to mistype a letter as an adjacent key
 _DEF_PHONO_DELETE = 0.0025 # chance to delete a valid character
 _DEF_PHONO_INSERT = 0.0025 # chance to insert a valid character
 _DEF_PHONO_REPLACE = 0.005 # chance to replace a valid character
+_DEF_PHONO_GROUP = 0.75 # chance to group potentially-groupable characters
 
 # Set global parameters to default values
 _CONFIG = _DEF_CONFIG
@@ -157,6 +160,7 @@ _TYPO_REPLACE = _DEF_TYPO_REPLACE
 _PHONO_DELETE = _DEF_PHONO_DELETE
 _PHONO_INSERT = _DEF_PHONO_INSERT
 _PHONO_REPLACE = _DEF_PHONO_REPLACE
+_PHONO_GROUP = _DEF_PHONO_GROUP
 
 #=============================================================================
 # Misspelling algorithms
@@ -210,6 +214,7 @@ def _misspell_word(w, mode=0, rules=None):
         (blocks, cats) = _word_blocks(w)
 
         # Process each block
+        prev_group = False # whether a letter group spans to the previous block
         for i in range(len(blocks)):
             # Skip non-letter blocks
             if cats[i] == "n":
@@ -225,10 +230,25 @@ def _misspell_word(w, mode=0, rules=None):
                 cap = 2 # first letter capitalized
             # Normalize capitalization
             blocks[i] = blocks[i].lower()
-            ### Check for groups on boundary and use to set 'preserve' flag
-            ###
+            # Check for letter groups on the boundary between blocks
+            fst = False # whether to preserve the first character
+            lst = False # whether to preserve the last character
+            if len(blocks) > 1:
+                if (i < len(blocks) - 1 and (blocks[i][-1] + blocks[i+1][0])
+                    in rules["group"]):
+                    # Randomly decide whether to pair the characters
+                    if random.random() < _PHONO_GROUP:
+                        prev_group = True
+                        lst = True
+                    else:
+                        prev_group = False
+                else:
+                    if prev_group == True:
+                        fst = True
+                    prev_group = False
             # Transform block
-            blocks[i] = _misspell_block(blocks[i], cats[i], rules=rules)### preserve
+            blocks[i] = _misspell_block(blocks[i], cats[i], rules=rules,
+                                        preserve=(fst, lst))
             # Apply capitalization
             if cap == 0:
                 blocks[i] = blocks[i].lower()
@@ -242,20 +262,6 @@ def _misspell_word(w, mode=0, rules=None):
         
         ### Phonological misspelling procedure:
         ### Divide word into blocks.
-        ###
-        ### Go through each block one-at-a-time, and use its relationship with
-        ### the other blocks to determine which rules to apply (C beginning,
-        ### C after V, V before C, V at end, V only, C in a VC word, V in a
-        ### VC word)
-        ### If any of the blocks are punctuation, recursively apply rules to
-        ### the maximal (C|V) blocks.
-        ###
-        ### After figuring out how to divide the word into syllables, send to
-        ### the _misspell_syllable(block, category, rules=rules, preserve=?)
-        ### function along with a syllable type categorization.
-        ### If the gap between syllables is bridged by a letter group, we
-        ### also set a flag to preserve the last letter of one and the first
-        ### letter of the other.
         ###
         ### Finally, if the word includes enough blocks, consider
         ### transposing one VC block with another VC block.
@@ -330,11 +336,23 @@ def _misspell_block(s, cat, rules=None, preserve=(False, False)):
         type(preserve[0]) != bool or type(preserve[1]) != bool):
         preserve = (False, False)
     s = s.lower()
+
+    # Go through each character
+    i = -1 # current character index
+    while i < len(s) - 1:
+        i += 1
+
+        # Skip if preserving
+        if preserve[0] == True and i < 1:
+            continue
+        if preserve[1] == True and i >= len(s) - 1:
+            continue
         
         ### _PHONO_DELETE
         ### _PHONO_INSERT
         ### _PHONO_REPLACE
         ### _PHONO_CUTOFF
+        ### _PHONO_GROUP
     
         ### Go through each letter in the block and decide whether to apply
         ### any transformations. If the letter is part of a possible group,
@@ -587,7 +605,7 @@ def _read_config(fin, silent=False):
     # Global parameters to be edited
     global _CONFIG, _BLACKLIST, _TYPO_DELETE_SPACE, _TYPO_DELETE_CHAR
     global _TYPO_SWAP, _TYPO_INSERT, _TYPO_REPLACE
-    global _PHONO_DELETE, _PHONO_INSERT, _PHONO_REPLACE
+    global _PHONO_DELETE, _PHONO_INSERT, _PHONO_REPLACE, _PHONO_GROUP
 
     # Generate default config if it does not exist
     if pathlib.Path(_DEF_CONFIG).exists() == False:
@@ -683,6 +701,8 @@ def _read_config(fin, silent=False):
         _PHONO_INSERT = float(config["phono"][key])
         key = "replace"
         _PHONO_REPLACE = float(config["phono"][key])
+        key = "group"
+        _PHONO_GROUP = float(config["phono"][key])
     except KeyError:
         if silent == False:
             print("Key '" + key + "' from 'phono' section not found in '" +
@@ -703,6 +723,8 @@ def _read_config(fin, silent=False):
     if _PHONO_INSERT < 0 or _PHONO_INSERT > 1:
         valid = False
     if _PHONO_REPLACE < 0 or _PHONO_REPLACE > 1:
+        valid = False
+    if _PHONO_GROUP < 0 or _PHONO_GROUP > 1:
         valid = False
     if _PHONO_DELETE + _PHONO_INSERT + _PHONO_REPLACE > 1:
         valid = False
@@ -741,7 +763,7 @@ def _default_config(silent=False, comments=True):
     # Global parameters to be edited
     global _CONFIG, _BLACKLIST, _TYPO_DELETE_SPACE, _TYPO_DELETE_CHAR
     global _TYPO_SWAP, _TYPO_INSERT, _TYPO_REPLACE
-    global _PHONO_DELETE, _PHONO_INSERT, _PHONO_REPLACE
+    global _PHONO_DELETE, _PHONO_INSERT, _PHONO_REPLACE, _PHONO_GROUP
 
     if silent == False:
         print("Resetting config file to default 'settings.ini' ...")
@@ -757,6 +779,7 @@ def _default_config(silent=False, comments=True):
     _PHONO_DELETE = _DEF_PHONO_DELETE
     _PHONO_INSERT = _DEF_PHONO_INSERT
     _PHONO_REPLACE = _DEF_PHONO_REPLACE
+    _PHONO_GROUP = _DEF_PHONO_GROUP
 
     # Initialize config parser
     config = configparser.ConfigParser(allow_no_value=True)
@@ -776,6 +799,7 @@ def _default_config(silent=False, comments=True):
     dic["delete"] = _PHONO_DELETE
     dic["insert"] = _PHONO_INSERT
     dic["replace"] = _PHONO_REPLACE
+    dic["group"] = _PHONO_GROUP
     config["phono"] = dic
     del dic
 

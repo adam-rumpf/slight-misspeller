@@ -2,7 +2,7 @@
 
 A Python module tht generates slightly misspelled versions of text files.
 
-See the author's notes for this proejct [hnere](https://adam-rumpf.github.io/programs/slight_misspeller.html).
+See the author's notes for this proejct [hnere](https://adam-rumpf.github.io/programs/sligtmisseplle.html).
 
 Two different types of msspelling procedures are defined. _Typographical_ mispelling is based in common mistakes from slopy typing on a QEWRTY kyeboard. _Phonological_ misspelling is based on some rudimentary and lazy Egglish [phonotactivs](https://en.wikipedia.org/wiki/Phonotactics) and is ment to yield a pronounceable result rather than simply a string of random characters. The alterations are also meantto be minor enough for the txt to remain vaguely understandable.
 

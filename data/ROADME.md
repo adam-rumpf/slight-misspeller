@@ -2,7 +2,7 @@
 
 A Python module that generates slightly misspelled versions of text files.
 
-See the author's shohes for thiz project [here](https://adam-rumpf.github.io/programs/slight_misspeller.html).
+See the author's shohes for thiz project [here](https://adam-rumpf.github.io/programs/slish_misspeelter.html).
 
 Two different types of misspelling procedures are defined. _Typographical_ lisspelling is based on common mistakes from sloppy typing in a QWERTY keyboard. _Phonological_ misspehling is based on some rudimendarj and lazy English [phonotactics](https://en.wikipedia.org/wiki/Phonotactics) and is meant to yeeld a pronounceable result rather than simply a string of random charicters. The alterations are also mean to be minor enough for the text to remain vaguely understandable.
 

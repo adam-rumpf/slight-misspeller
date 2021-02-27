@@ -41,7 +41,7 @@ import sys
 #=============================================================================
 
 # Define docstrings
-_VERSION = """Slight Misspeller v1.0.1
+_VERSION = """Slight Misspeller v1.0.2
 Copyright (c) 2021 Adam Rumpf <adam-rumpf.github.io>
 Released under MIT License <github.com/adam-rumpf/slight-misspeller>
 """

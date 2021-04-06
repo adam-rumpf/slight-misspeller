@@ -1,5 +1,7 @@
 # Slight Misspeller
 
+<a href="https://github.com/adam-rumpf/slight-misspeller/search?l=python"><img src="https://img.shields.io/badge/language-python-blue?style=plastic&logo=python&logoColor=white"/></a> <a href="https://github.com/adam-rumpf/slight-misspeller/releases"><img src="https://img.shields.io/github/v/release/adam-rumpf/slight-misspeller?style=plastic"/></a> <a href="https://github.com/adam-rumpf/slight-misspeller/blob/master/LICENSE"><img src="https://img.shields.io/github/license/adam-rumpf/slight-misspeller?style=plastic"/></a> <a href="https://github.com/adam-rumpf/slight-misspeller/commits/master"><img src="https://img.shields.io/maintenance/no/2021?style=plastic"/></a>
+
 A Python module that generates slightly misspelled versions of text files.
 
 See the author's notes for this project [here](https://adam-rumpf.github.io/programs/slight_misspeller.html).

@@ -12,7 +12,7 @@ misspell_file(fin[, fout][, config]) -- writes a misspelled version of a given
     input file (or prints to screen if no output is given; optional argument
     specifies a custom settings file)
 
-Command line arguments are also supported. Call "misspell.py --help" for a
+Command line arguments are also supported. Call "misspell --help" for a
 complete guide.
 
 Two different types of misspelling rule are defined: phonological misspelling,
@@ -165,6 +165,69 @@ _PHONO_GROUP = _DEF_PHONO_GROUP
 # Set global character sets to default values
 _VOWEL_SET = tuple(_VOWELS)
 _CONSONANT_SET = tuple(_CONSONANTS)
+
+#=============================================================================
+# Main driver
+#=============================================================================
+
+def main():
+    """Main slight misspeller driver for console usage.
+    
+    This function is called when this package is executed as a script, or when
+    it is called from the console as:
+        $ misspell [args]
+    
+    This function attempts to parse any command line arguments, and then calls
+    an appropriate misspelling function.
+    """
+    
+    # Initialize argument parser and mutually exclusive group
+    parser = argparse.ArgumentParser(description=_DESCRIPTION, epilog=_EPILOG,
+                                     formatter_class=
+                                     argparse.RawDescriptionHelpFormatter)
+    group = parser.add_mutually_exclusive_group()
+
+    # Define arguments
+    parser.add_argument("-v", "--version", action="version", version=_VERSION)
+    parser.add_argument("instring",
+                        help="input file (or string, with the --string tag)")
+    parser.add_argument("outstring", nargs="?",
+                        help="output file (leave empty to print result to " +
+                        "screen)")
+    parser.add_argument("-i", "--init-file", default=_DEF_CONFIG,
+                        help="misspeller parameter config file", dest="config")
+    parser.add_argument("-s", "--string", action="store_true",
+                        help=("interpret 'instring' as a string to be " +
+                              "misspelled rather than a file path"))
+    parser.add_argument("-q", "--quiet", action="store_true", dest="silent",
+                        help="silence progress messages")
+    group.add_argument("-p", "--phono", action="store_true",
+                       help="apply only phonological misspelling rules")
+    group.add_argument("-t", "--typo", action="store_true",
+                       help="apply only typographical misspelling rules")
+    
+    # Parse command line arguments
+    args = parser.parse_args()
+
+    # Use arguments to call an appropriate public function
+    mode = 0
+    if args.phono == True:
+        mode = 1
+    if args.typo == True:
+        mode = 2
+    if args.string == True:
+        s = misspell_string(args.instring, mode=mode, config=args.config,
+                            silent=args.silent)
+        if args.outstring == None:
+            print(s)
+        else:
+            with open(args.outstring, 'w') as f:
+                f.write(s)
+                if args.silent == False:
+                    print("Output file '" + args.outstring + "' written.")
+    else:
+        misspell_file(args.instring, args.outstring, mode=mode,
+                      config=args.config, silent=args.silent)
 
 #=============================================================================
 # Misspelling algorithms
@@ -1203,51 +1266,5 @@ def misspell_file(fin, fout=None, mode=0, config=_DEF_CONFIG,
 #=============================================================================
 
 if __name__ == "__main__" and len(sys.argv) > 1:
-
-    # Initialize argument parser and mutually exclusive group
-    parser = argparse.ArgumentParser(description=_DESCRIPTION, epilog=_EPILOG,
-                                     formatter_class=
-                                     argparse.RawDescriptionHelpFormatter)
-    group = parser.add_mutually_exclusive_group()
-
-    # Define arguments
-    parser.add_argument("-v", "--version", action="version", version=_VERSION)
-    parser.add_argument("instring",
-                        help="input file (or string, with the --string tag)")
-    parser.add_argument("outstring", nargs="?",
-                        help="output file (leave empty to print result to " +
-                        "screen)")
-    parser.add_argument("-i", "--init-file", default=_DEF_CONFIG,
-                        help="misspeller parameter config file", dest="config")
-    parser.add_argument("-s", "--string", action="store_true",
-                        help=("interpret 'instring' as a string to be " +
-                              "misspelled rather than a file path"))
-    parser.add_argument("-q", "--quiet", action="store_true", dest="silent",
-                        help="silence progress messages")
-    group.add_argument("-p", "--phono", action="store_true",
-                       help="apply only phonological misspelling rules")
-    group.add_argument("-t", "--typo", action="store_true",
-                       help="apply only typographical misspelling rules")
-    
-    # Parse command line arguments
-    args = parser.parse_args()
-
-    # Use arguments to call an appropriate public function
-    mode = 0
-    if args.phono == True:
-        mode = 1
-    if args.typo == True:
-        mode = 2
-    if args.string == True:
-        s = misspell_string(args.instring, mode=mode, config=args.config,
-                            silent=args.silent)
-        if args.outstring == None:
-            print(s)
-        else:
-            with open(args.outstring, 'w') as f:
-                f.write(s)
-                if args.silent == False:
-                    print("Output file '" + args.outstring + "' written.")
-    else:
-        misspell_file(args.instring, args.outstring, mode=mode,
-                      config=args.config, silent=args.silent)
+    # Call the main driver
+    main()

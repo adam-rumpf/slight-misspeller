@@ -29,6 +29,9 @@ a template for creating different settings profiles. See the comments in the
 default config file for a complete guide.
 """
 
+__author__ = "Adam Rumpf"
+__version__ = "1.1.0"
+
 import argparse
 import configparser
 import pathlib
@@ -41,10 +44,9 @@ import sys
 #=============================================================================
 
 # Define docstrings
-_VERSION = """Slight Misspeller v1.0.3
-Copyright (c) 2021 Adam Rumpf <adam-rumpf.github.io>
-Released under MIT License <github.com/adam-rumpf/slight-misspeller>
-"""
+_VERSION = ("Slight Misspeller v" + __version__ + "\n" +
+"Copyright (c) 2021 Adam Rumpf <adam-rumpf.github.io>\n" +
+"Released under MIT License <github.com/adam-rumpf/slight-misspeller>")
 _DESCRIPTION = "Slightly misspells a string or file."
 _EPILOG = """
 The first argument may be either a string to convert, or the name of an input

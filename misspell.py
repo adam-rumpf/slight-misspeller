@@ -41,7 +41,7 @@ import sys
 #=============================================================================
 
 # Define docstrings
-_VERSION = """Slight Misspeller v1.0.2
+_VERSION = """Slight Misspeller v1.0.3
 Copyright (c) 2021 Adam Rumpf <adam-rumpf.github.io>
 Released under MIT License <github.com/adam-rumpf/slight-misspeller>
 """
@@ -95,7 +95,7 @@ _CONFIG_COMMENTS = """;
 ; [phono]
 ;
 ; Defines parameters for phonological misspelling (conducted before
-; typographical misspelling. All fields specify probabilities between 0.0 and
+; typographical misspelling). All fields specify probabilities between 0.0 and
 ; 1.0 for each event occurring for any given character.
 ;
 ; Events delete_char, insert, and replace are mutually exclusive, and the sum
